@@ -46,4 +46,9 @@ if (\App\Models\User::where("user_type", "staff")->count() === 0) {
 php artisan config:cache || true
 php artisan route:cache || true
 
+# Configure Apache port dynamically from $PORT (Render sets PORT=10000, defaults to 80)
+APACHE_PORT="${PORT:-80}"
+sed -i "s/Listen .*/Listen ${APACHE_PORT}/" /etc/apache2/ports.conf
+sed -i "s/<VirtualHost \*:.*>/<VirtualHost *:${APACHE_PORT}>/" /etc/apache2/sites-available/000-default.conf
+
 exec "$@"
