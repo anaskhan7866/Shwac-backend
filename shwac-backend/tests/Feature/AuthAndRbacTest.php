@@ -121,4 +121,12 @@ class AuthAndRbacTest extends TestCase
             'name' => 'New Tech', 'phone' => '9811111111', 'password' => 'Secret123', 'user_type' => 'technician',
         ])->assertCreated()->assertJsonPath('branch_id', $this->branch->id)->assertJsonPath('roles.0.slug', 'technician');
     }
+
+    #[Test]
+    public function otp_routes_work_with_and_without_api_v1_prefix(): void
+    {
+        $this->postJson('/auth/otp/request', ['phone' => '9876509999'])->assertOk();
+        $this->postJson('/api/auth/otp/request', ['phone' => '9876508888'])->assertOk();
+        $this->postJson('/api/v1/auth/otp/request', ['phone' => '9876507777'])->assertOk();
+    }
 }
