@@ -30,7 +30,9 @@ Route::get('/apps', function () {
 
 // Support mobile apps configured with base URL without /api/v1 (e.g. https://.../auth/otp/request or /v1/auth/...)
 $registerApi = require __DIR__.'/api_routes.php';
-Route::middleware('api')->group(function () use ($registerApi) {
-    Route::prefix('v1')->group($registerApi);
-    $registerApi();
-});
+Route::withoutMiddleware([\Illuminate\Foundation\Http\Middleware\ValidateCsrfToken::class])
+    ->middleware('api')
+    ->group(function () use ($registerApi) {
+        Route::prefix('v1')->group($registerApi);
+        $registerApi();
+    });

@@ -17,6 +17,16 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->trustProxies(at: '*');
+        $middleware->validateCsrfTokens(except: [
+            'auth/*',
+            'customer/*',
+            'technician/*',
+            'catalog*',
+            'v1/*',
+            'api/*',
+            'webhooks/*',
+            'admin/*',
+        ]);
         $middleware->alias([
             'permission' => EnsurePermission::class,
             'user.type' => EnsureUserType::class,
