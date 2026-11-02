@@ -47,6 +47,7 @@ return function () {
                 Route::get('users', [Admin\UserController::class, 'index']);
                 Route::post('users', [Admin\UserController::class, 'store']);
                 Route::patch('users/{user}', [Admin\UserController::class, 'update']);
+                Route::delete('users/{user}', [Admin\UserController::class, 'destroy']);
                 Route::get('roles', [Admin\UserController::class, 'roles']);
             });
             Route::put('roles/{role}', [Admin\UserController::class, 'updateRole'])->middleware('permission:settings.manage');

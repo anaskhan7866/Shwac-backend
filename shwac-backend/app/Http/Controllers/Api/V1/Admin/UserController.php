@@ -21,6 +21,7 @@ class UserController extends Controller
     {
         $actor = $request->user();
         $q = User::query()->whereIn('user_type', [User::TYPE_STAFF, User::TYPE_TECHNICIAN])
+            ->whereNull('removed_at')
             ->with('roles:id,slug,name', 'branch:id,name');
         if (! $actor->canSeeAllBranches()) {
             $q->where('branch_id', $actor->branch_id);
@@ -44,11 +45,20 @@ class UserController extends Controller
             'password' => ['required', Password::min(8)->letters()->numbers()],
             'user_type' => ['required', Rule::in([User::TYPE_STAFF, User::TYPE_TECHNICIAN])],
             'branch_id' => ['nullable', 'exists:branches,id'],
+            // New logins are either a Super Admin (staff) or a Technician — no other roles.
             'roles' => ['array'],
-            'roles.*' => ['string', 'exists:roles,slug'],
+            'roles.*' => ['string', Rule::in(['super_admin'])],
         ]);
-        $this->guardRoles($actor, $data['roles'] ?? []);
+        $isTech = $data['user_type'] === User::TYPE_TECHNICIAN;
+        $data['roles'] = $isTech ? [] : ['super_admin'];
+        $this->guardRoles($actor, $data['roles']);
         $branchId = $actor->canSeeAllBranches() ? ($data['branch_id'] ?? null) : $actor->branch_id;
+        if ($isTech) {
+            // A technician's van stock lives in a branch; without one the app cannot load.
+            abort_if(! $branchId, 422, 'Choose a branch for the technician.');
+        } else {
+            $branchId = null; // Super Admin sees every branch
+        }
 
         $user = User::create(collect($data)->except('roles')->all() + ['branch_id' => $branchId]);
         $roles = $data['roles'] ?? [];
@@ -63,7 +73,7 @@ class UserController extends Controller
     public function update(Request $request, User $user): JsonResponse
     {
         $actor = $request->user();
-        abort_if(! $user->isStaff(), 404);
+        abort_if(! $user->isStaff() || $user->removed_at, 404);
         abort_if(! $actor->canSeeAllBranches() && $user->branch_id !== $actor->branch_id, 404);
         abort_if($user->isSuperAdmin() && ! $actor->isSuperAdmin(), 403, 'Only a Super Admin can edit a Super Admin.');
 
@@ -75,10 +85,13 @@ class UserController extends Controller
             'branch_id' => ['nullable', 'exists:branches,id'],
             'is_active' => ['sometimes', 'boolean'],
             'roles' => ['sometimes', 'array'],
-            'roles.*' => ['string', 'exists:roles,slug'],
+            'roles.*' => ['string', Rule::in(['super_admin'])],
         ]);
         if (! $actor->canSeeAllBranches()) {
             unset($data['branch_id']);
+        }
+        if ($user->isTechnician() && array_key_exists('branch_id', $data) && ! $data['branch_id']) {
+            abort(422, 'A technician must belong to a branch.');
         }
         if (array_key_exists('roles', $data)) {
             $this->guardRoles($actor, $data['roles']);
@@ -94,6 +107,36 @@ class UserController extends Controller
         }
 
         return response()->json($user->load('roles:id,slug,name'));
+    }
+
+    /**
+     * Delete a staff member or technician. The row is kept (marked removed) so past
+     * jobs, invoices, attendance and expenses keep their name; the login is blocked,
+     * all sessions are signed out and the email/phone are freed for reuse.
+     */
+    public function destroy(Request $request, User $user): JsonResponse
+    {
+        $actor = $request->user();
+        abort_if(! $user->isStaff() || $user->removed_at, 404);
+        abort_if(! $actor->canSeeAllBranches() && $user->branch_id !== $actor->branch_id, 404);
+        abort_if($user->id === $actor->id, 422, 'You cannot delete your own login.');
+        abort_if($user->isSuperAdmin() && ! $actor->isSuperAdmin(), 403, 'Only a Super Admin can delete a Super Admin.');
+
+        if ($user->isSuperAdmin()) {
+            $others = User::whereNull('removed_at')->where('is_active', true)->where('id', '!=', $user->id)
+                ->whereHas('roles', fn ($r) => $r->where('slug', 'super_admin'))->exists();
+            abort_unless($others, 422, 'You cannot delete the last Super Admin.');
+        }
+
+        if ($user->isTechnician()) {
+            $open = $user->assignedJobs()->whereIn('status', \App\Models\ServiceJob::ACTIVE_STATUSES)->count();
+            abort_if($open > 0, 422, "This technician still has {$open} open job(s). Reassign them first.");
+        }
+
+        $user->tokens()->delete();
+        $user->update(['is_active' => false, 'removed_at' => now(), 'email' => null, 'phone' => null]);
+
+        return response()->json(['deleted' => true]);
     }
 
     public function roles(): JsonResponse

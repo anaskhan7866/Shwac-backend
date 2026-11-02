@@ -123,6 +123,73 @@ class AuthAndRbacTest extends TestCase
     }
 
     #[Test]
+    public function deleting_a_login_hides_it_blocks_login_and_frees_email(): void
+    {
+        $admin = $this->staff('super_admin');
+        $this->actingAsUser($admin);
+        $tech = $this->technician();
+        $email = $tech->email;
+
+        $this->deleteJson("/api/v1/admin/users/{$tech->id}")->assertOk();
+
+        $tech->refresh();
+        $this->assertNotNull($tech->removed_at);
+        $this->assertFalse($tech->is_active);
+        $this->assertNull($tech->email);
+        $this->getJson('/api/v1/admin/users')->assertOk()->assertJsonMissing(['id' => $tech->id]);
+        $this->deleteJson("/api/v1/admin/users/{$tech->id}")->assertNotFound();
+
+        // Email can be reused for a new login
+        if ($email) {
+            $this->postJson('/api/v1/admin/users', [
+                'name' => 'Reuse', 'email' => $email, 'password' => 'Secret123', 'user_type' => 'technician', 'branch_id' => $this->branch->id,
+            ])->assertCreated();
+        }
+
+        // Cannot delete yourself or the last Super Admin
+        $this->deleteJson("/api/v1/admin/users/{$admin->id}")->assertStatus(422);
+    }
+
+    #[Test]
+    public function technician_with_open_jobs_cannot_be_deleted(): void
+    {
+        $this->actingAsUser($this->staff('super_admin'));
+        $tech = $this->technician();
+        $c = $this->customer();
+        $a = \App\Models\CustomerAddress::create(['customer_id' => $c->id, 'line1' => 'X', 'city' => 'Meerut', 'state' => 'UP', 'state_code' => '09', 'pincode' => '250001']);
+        \App\Models\ServiceJob::create(['number' => 'JOB-DEL', 'branch_id' => $this->branch->id, 'customer_id' => $c->id, 'customer_address_id' => $a->id,
+            'technician_id' => $tech->id, 'status' => 'assigned', 'scheduled_date' => today()]);
+
+        $this->deleteJson("/api/v1/admin/users/{$tech->id}")->assertStatus(422);
+    }
+
+    #[Test]
+    public function new_logins_are_only_super_admin_or_technician(): void
+    {
+        $this->actingAsUser($this->staff('super_admin'));
+
+        // Other roles can no longer be assigned
+        $this->postJson('/api/v1/admin/users', [
+            'name' => 'Acc', 'email' => 'acc@x.test', 'password' => 'Secret123', 'user_type' => 'staff', 'roles' => ['accountant'],
+        ])->assertStatus(422);
+
+        // Staff login always becomes a Super Admin with no branch
+        $this->postJson('/api/v1/admin/users', [
+            'name' => 'Boss', 'email' => 'boss@x.test', 'password' => 'Secret123', 'user_type' => 'staff',
+            'roles' => ['super_admin'], 'branch_id' => $this->branch->id,
+        ])->assertCreated()->assertJsonPath('roles.0.slug', 'super_admin')->assertJsonPath('branch_id', null);
+
+        // A technician must have a branch
+        $this->postJson('/api/v1/admin/users', [
+            'name' => 'No Branch Tech', 'phone' => '9822222222', 'password' => 'Secret123', 'user_type' => 'technician',
+        ])->assertStatus(422);
+
+        $this->postJson('/api/v1/admin/users', [
+            'name' => 'Tech', 'phone' => '9833333333', 'password' => 'Secret123', 'user_type' => 'technician', 'branch_id' => $this->branch->id,
+        ])->assertCreated()->assertJsonPath('branch_id', $this->branch->id)->assertJsonPath('roles.0.slug', 'technician');
+    }
+
+    #[Test]
     public function otp_routes_work_with_and_without_api_v1_prefix(): void
     {
         $this->postJson('/auth/otp/request', ['phone' => '9876509999'])->assertOk();

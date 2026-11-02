@@ -89,11 +89,10 @@
     const [r, roles] = await Promise.all([SH.get('/admin/users', { page: q.page, q: q.q, user_type: q.type }), SH.get('/admin/roles')]);
     if (!SH.state.branches && SH.allBranches()) SH.state.branches = await SH.get('/admin/branches');
     const branches = SH.state.branches || (SH.state.user.branch ? [SH.state.user.branch] : []);
-    const assignable = roles.roles.filter((x) => !['customer', 'technician'].includes(x.slug));
     const isSA = (SH.state.user.roles || []).includes('super_admin') || SH.can('settings.manage');
     const usersHtml = `<div class="row between">${chips('type', q.type || '', [['', 'Everyone'], ['staff', 'Office staff'], ['technician', 'Technicians']])}${searchBox(q.q, 'Name, phone or email')}</div>
       <div class="tablebox"><table class="t"><thead><tr><th>Name</th><th>Login</th><th>Type</th><th>Roles</th><th>Branch</th><th>Last login</th><th>Status</th><th></th></tr></thead><tbody>
-      ${r.data.map((u) => `<tr><td><b>${esc(u.name)}</b></td><td>${esc(u.email || '')}<div class="sub">${esc(u.phone || '')}</div></td><td>${esc(SH.label(u.user_type))}</td><td>${(u.roles || []).map((x) => esc(x.name)).join(', ')}</td><td>${esc(u.branch ? u.branch.name : 'All')}</td><td>${dt(u.last_login_at)}</td><td>${pill(u.is_active ? 'active' : 'inactive')}</td><td><button class="btn sm" data-act="edit" data-id="${u.id}">Edit</button></td></tr>`).join('') || '<tr><td colspan="8" class="empty">No users.</td></tr>'}
+      ${r.data.map((u) => `<tr><td><b>${esc(u.name)}</b></td><td>${esc(u.email || '')}<div class="sub">${esc(u.phone || '')}</div></td><td>${esc(SH.label(u.user_type))}</td><td>${(u.roles || []).map((x) => esc(x.name)).join(', ')}</td><td>${esc(u.branch ? u.branch.name : 'All')}</td><td>${dt(u.last_login_at)}</td><td>${pill(u.is_active ? 'active' : 'inactive')}</td><td style="white-space:nowrap"><button class="btn sm" data-act="edit" data-id="${u.id}">Edit</button> ${u.id !== SH.state.user.id ? `<button class="btn sm danger" data-act="del" data-id="${u.id}">Delete</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="8" class="empty">No users.</td></tr>'}
       </tbody></table>${pager(r)}</div>`;
     const groups = {}; roles.permissions.forEach((x) => { (groups[x.group] = groups[x.group] || []).push(x); });
     const editableRoles = roles.roles.filter((x) => !['super_admin', 'customer'].includes(x.slug));
@@ -105,8 +104,17 @@
       html: `${head('Staff & roles', 'Office logins (admin panel) and technician logins (Android app).', '<button class="btn primary" data-act="new">+ New login</button>')}
         ${chips('tab', tab, [['users', 'People'], ['roles', 'Role permissions']])}${tab === 'roles' ? rolesHtml : usersHtml}`,
       actions: {
-        new: () => userModal({ user_type: 'staff', is_active: true, roles: [] }),
+        new: () => userModal({ user_type: 'technician', is_active: true, roles: [] }),
         edit: (el) => userModal(r.data.find((u) => String(u.id) === el.dataset.id)),
+        del: async (el) => {
+          const u = r.data.find((x) => String(x.id) === el.dataset.id); if (!u) return;
+          const ok = await SH.confirm('Delete ' + u.name + '?',
+            'They will be signed out and can no longer log in. Past jobs, invoices and attendance keep their name. Their email and mobile can be used for a new login.',
+            'Delete');
+          if (!ok) return;
+          await SH.api('DELETE', '/admin/users/' + u.id);
+          SH.toast(u.name + ' deleted.'); SH.reload();
+        },
         saveRoles: async (f) => {
           for (const x of editableRoles) {
             const perms = Array.from(f.querySelectorAll(`[name="r${x.id}"]:checked`)).map((c) => c.value);
@@ -117,20 +125,39 @@
         },
       },
     };
+    // Only two kinds of login: Super Admin (admin panel, all branches) or Technician (Android app, one branch).
     function userModal(u) {
-      const has = (slug) => (u.roles || []).some((x) => (x.slug || x) === slug);
+      const isTech = u.user_type === 'technician';
+      const canMakeSA = isSA;
+      const roleLabel = isTech ? 'Technician' : (u.roles || []).map((x) => x.name || x).join(', ') || 'Office staff';
+      const branchSelect = (show) => SH.allBranches()
+        ? `<label class="f" data-branch ${show ? '' : 'hidden'}>Branch<select class="in" name="branch_id" ${show ? 'required' : ''}><option value="">Choose a branch…</option>${branches.map((b) => opt(b.id, b.name, u.branch_id)).join('')}</select></label>`
+        : '';
       SH.openModal(`<h3>${u.id ? 'Edit ' + esc(u.name) : 'New login'}</h3><form data-submit="save" class="form">
         <label class="f">Name<input class="in" name="name" value="${esc(u.name || '')}" required></label>
-        ${u.id ? '' : `<label class="f">Type<select class="in" name="user_type">${opt('staff', 'Office staff (admin panel)', u.user_type)}${opt('technician', 'Technician (Android app)', u.user_type)}</select></label>`}
+        ${u.id
+          ? `<label class="f">Role<input class="in" value="${esc(roleLabel)}" disabled></label>`
+          : `<label class="f">Role<select class="in" name="account_role" data-change="roleChanged">${opt('technician', 'Technician (Android app)', 'technician')}${canMakeSA ? opt('super_admin', 'Super Admin (admin panel)', '') : ''}</select></label>`}
         <label class="f">Email<input class="in" type="email" name="email" value="${esc(u.email || '')}"></label><label class="f">Mobile<input class="in" name="phone" value="${esc(u.phone || '')}" pattern="[6-9]\\d{9}" inputmode="numeric"></label>
         <label class="f">${u.id ? 'New password (leave blank to keep)' : 'Password'}<input class="in" type="password" name="password" minlength="8" ${u.id ? '' : 'required'} autocomplete="new-password" placeholder="8+ characters, letters and numbers"></label>
-        ${SH.allBranches() ? `<label class="f">Branch<select class="in" name="branch_id"><option value="">All branches</option>${branches.map((b) => opt(b.id, b.name, u.branch_id)).join('')}</select></label>` : ''}
-        <div class="full"><div class="small muted" style="font-weight:700;margin-bottom:6px">Roles (office staff)</div><div class="chips">${assignable.map((x) => `<label class="chip check"><input type="checkbox" name="roles" value="${esc(x.slug)}" data-multi="1" ${has(x.slug) ? 'checked' : ''}> ${esc(x.name)}</label>`).join('')}</div><div class="small muted">Technicians always get the Technician role.</div></div>
+        ${u.id ? (isTech ? branchSelect(true) : '') : branchSelect(true)}
         ${u.id ? `<label class="check full"><input type="checkbox" name="is_active" ${u.is_active ? 'checked' : ''}> Can log in (untick to block and sign out everywhere)</label>` : ''}
         <div class="actions full"><button type="button" class="btn" data-act="closeModal">Cancel</button><button class="btn primary" type="submit">Save</button></div></form>`, {
+        roleChanged: (el) => {
+          const box = el.form.querySelector('[data-branch]'); if (!box) return;
+          const tech = el.value === 'technician';
+          box.hidden = !tech; box.querySelector('select').required = tech;
+          if (!tech) box.querySelector('select').value = '';
+        },
         save: async (f) => {
-          const b = SH.formData(f); b.roles = b.roles || []; if (!b.password) delete b.password;['email', 'phone'].forEach((k) => { if (!b[k]) b[k] = null; });
+          const b = SH.formData(f); if (!b.password) delete b.password;['email', 'phone'].forEach((k) => { if (!b[k]) b[k] = null; });
           if (b.branch_id !== undefined) b.branch_id = b.branch_id ? Number(b.branch_id) : null;
+          if (!u.id) {
+            const role = b.account_role || 'technician'; delete b.account_role;
+            b.user_type = role === 'super_admin' ? 'staff' : 'technician';
+            b.roles = role === 'super_admin' ? ['super_admin'] : [];
+            if (role === 'super_admin') b.branch_id = null;
+          }
           if (u.id) await SH.patch('/admin/users/' + u.id, b); else await SH.post('/admin/users', b);
           SH.closeModal(); SH.toast('Saved.'); SH.reload();
         },

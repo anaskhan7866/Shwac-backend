@@ -36,6 +36,7 @@ class User extends Authenticatable
             'last_lng' => 'float',
             'last_seen_at' => 'datetime',
             'location_consent_at' => 'datetime',
+            'removed_at' => 'datetime',
         ];
     }
 

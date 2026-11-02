@@ -1,0 +1,9 @@
+customer-web-dist/
+shwac-apps/
+shwac-backend.zip
+shwac-mock-api/
+
+# Local Claude skills (not pushed)
+.claude/skills/
+.agents/
+skills-lock.json
