@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Customer;
 use App\Models\CustomerAddress;
 use App\Models\CustomerProduct;
+use App\Models\User;
 use App\Services\NumberGenerator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -72,7 +73,14 @@ class CustomerController extends Controller
         if (isset($data['branch_id']) && ! $request->user()->canSeeAllBranches()) {
             unset($data['branch_id']);
         }
-        $customer->update($data);
+        DB::transaction(function () use ($customer, $data) {
+            $customer->update($data);
+            // Customers log in with this phone (OTP): keep the login on the same number.
+            if ($customer->user && isset($data['phone']) && $customer->user->phone !== $data['phone']) {
+                abort_if(User::where('phone', $data['phone'])->whereKeyNot($customer->user_id)->exists(), 422, 'Another login already uses this phone number.');
+                $customer->user->update(['phone' => $data['phone']]);
+            }
+        });
 
         return response()->json($customer);
     }
@@ -97,7 +105,12 @@ class CustomerController extends Controller
         $this->ensureVisible($customer, $request->user());
         abort_unless($address->customer_id === $customer->id, 404);
         $data = $request->validate(collect($this->addressRules())->map(fn ($r) => array_map(fn ($x) => $x === 'required' ? 'sometimes' : $x, $r))->all());
-        $address->update($data);
+        DB::transaction(function () use ($customer, $address, $data) {
+            if (! empty($data['is_default'])) {
+                $customer->addresses()->whereKeyNot($address->id)->update(['is_default' => false]);
+            }
+            $address->update($data);
+        });
 
         return response()->json($address);
     }
@@ -125,6 +138,7 @@ class CustomerController extends Controller
         $this->ensureVisible($customer, $request->user());
         abort_unless($product->customer_id === $customer->id, 404);
         $product->update($request->validate([
+            'category' => ['nullable', 'string', 'max:60'],
             'product_name' => ['sometimes', 'string', 'max:120'],
             'brand' => ['nullable', 'string', 'max:60'],
             'model' => ['nullable', 'string', 'max:60'],

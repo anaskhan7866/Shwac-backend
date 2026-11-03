@@ -366,6 +366,7 @@
       if (my !== routing) return;
       SH.view = v || {};
       root.innerHTML = SH.view.html || '';
+      SH.alignTables(root);
       root.style.opacity = '';
       if (SH.view.init) await SH.view.init(root);
       window.scrollTo(0, 0);
@@ -378,6 +379,19 @@
     }
     SH.refreshCounts();
   };
+  // Line table headers up with their cells: a column whose cells are all right-aligned gets a
+  // right-aligned header, and a trailing column of only buttons is pushed to the right edge.
+  SH.alignTables = (root) => root.querySelectorAll('table.t').forEach((t) => {
+    const head = t.tHead && t.tHead.rows[0]; if (!head) return;
+    const rows = [...t.tBodies].flatMap((b) => [...b.rows]).filter((r) => !r.querySelector('td[colspan]'));
+    if (!rows.length) return;
+    [...head.cells].forEach((th, i) => { if (rows.every((r) => r.cells[i] && r.cells[i].classList.contains('right'))) th.classList.add('right'); });
+    const last = head.cells.length - 1;
+    const onlyButtons = (td) => td && td.children.length > 0 && [...td.children].every((c) => c.matches('.btn, button'));
+    if (rows.every((r) => onlyButtons(r.cells[last]) || (r.cells[last] && !r.cells[last].textContent.trim()))) {
+      rows.forEach((r) => r.cells[last] && r.cells[last].classList.add('acts'));
+    }
+  });
   // Re-render the current page in place (after an action).
   SH.reload = () => SH.route();
 

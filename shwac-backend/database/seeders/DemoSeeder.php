@@ -7,8 +7,6 @@ use App\Models\Customer;
 use App\Models\Product;
 use App\Models\Warehouse;
 use App\Services\Inventory\InventoryService;
-use App\Models\Service;
-use App\Models\ServiceCategory;
 use App\Models\User;
 use Illuminate\Database\Seeder;
 
@@ -46,39 +44,8 @@ class DemoSeeder extends Seeder
             ])->assignRole($role);
         }
 
-        $ro = ServiceCategory::firstOrCreate(['slug' => 'ro-purifier'], ['name' => 'RO Water Purifier', 'sort_order' => 1]);
-        $solar = ServiceCategory::firstOrCreate(['slug' => 'solar'], ['name' => 'Solar Water Heater', 'sort_order' => 2]);
-        $appl = ServiceCategory::firstOrCreate(['slug' => 'appliances'], ['name' => 'Home Appliances', 'sort_order' => 3]);
-
-        $brandField = ['key' => 'brand', 'label' => 'Brand', 'type' => 'select', 'required' => true,
-            'options' => ['Kent', 'Aquaguard', 'Pureit', 'Livpure', 'AO Smith', 'Other']];
-
-        $services = [
-            [$ro, 'RO-INST', 'RO Installation', 499, [$brandField,
-                ['key' => 'wall_type', 'label' => 'Wall type', 'type' => 'select', 'options' => ['Brick', 'Tile', 'Wood'], 'required' => true],
-                ['key' => 'water_source', 'label' => 'Water source', 'type' => 'select', 'options' => ['Municipal', 'Borewell', 'Tanker'], 'required' => true],
-                ['key' => 'job_type', 'label' => 'Job type', 'type' => 'select', 'options' => ['installation'], 'required' => false],
-            ]],
-            [$ro, 'RO-SRV', 'RO General Service', 399, [$brandField,
-                ['key' => 'last_service', 'label' => 'Last serviced on', 'type' => 'date'],
-            ]],
-            [$ro, 'RO-FLT', 'Filter & Membrane Change', 1499, [$brandField,
-                ['key' => 'tds', 'label' => 'Current TDS (if known)', 'type' => 'number', 'min' => 0, 'max' => 3000],
-            ]],
-            [$ro, 'RO-REP', 'RO Repair / Not Working', 349, [$brandField,
-                ['key' => 'issue', 'label' => 'What is the problem?', 'type' => 'multiselect', 'options' => ['No water', 'Leakage', 'Bad taste', 'Noise', 'Not switching on'], 'required' => true],
-            ]],
-            [$solar, 'SOL-SRV', 'Solar Heater Service', 799, [
-                ['key' => 'capacity_lpd', 'label' => 'Capacity (litres/day)', 'type' => 'select', 'options' => ['100', '150', '200', '300', '500']],
-            ]],
-            [$appl, 'APL-INSP', 'Appliance Inspection Visit', 299, []],
-        ];
-        foreach ($services as $i => [$cat, $code, $name, $price, $schema]) {
-            Service::firstOrCreate(['code' => $code], [
-                'service_category_id' => $cat->id, 'name' => $name, 'base_price' => $price, 'tax_rate' => 18,
-                'sac_code' => '998719', 'form_schema' => $schema, 'sort_order' => $i,
-            ]);
-        }
+        // ---- Service catalog (V2): Home Appliances + Solar with the client spec fields
+        $this->call(ServiceCatalogSeeder::class);
 
         // ---- Inventory: main store, spare parts with barcodes, stock issued to each technician's van
         $inv = app(InventoryService::class);

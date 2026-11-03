@@ -60,7 +60,7 @@ class UserController extends Controller
             $branchId = null; // Super Admin sees every branch
         }
 
-        $user = User::create(collect($data)->except('roles')->all() + ['branch_id' => $branchId]);
+        $user = User::create(collect($data)->except(['roles', 'branch_id'])->all() + ['branch_id' => $branchId]);
         $roles = $data['roles'] ?? [];
         if ($user->isTechnician()) {
             $roles[] = 'technician';

@@ -46,7 +46,7 @@
           ${invoice ? '' : `<label class="f">Take parts from<select class="in" name="stock_warehouse_id"><option value="">Branch main store (automatic)</option>${whs.map((w) => opt(w.id, w.name)).join('')}</select></label>`}
           ${q && q.job ? `<input type="hidden" name="service_job_id" value="${esc(q.job)}"><div class="note full">For service job #${esc(q.job)}</div>` : ''}
         </div>
-        <div class="tablebox" style="border-radius:12px"><table class="t" style="min-width:900px"><thead><tr><th style="width:120px">Type</th><th>Item</th><th style="width:80px">Qty</th><th style="width:120px">Price</th><th style="width:100px">Discount</th><th style="width:90px">GST %</th><th class="right" style="width:120px">Amount</th><th></th></tr></thead><tbody data-lines></tbody></table></div>
+        <div class="tablebox" style="border-radius:12px"><table class="t" style="min-width:900px"><thead><tr><th style="width:150px">Type</th><th>Item</th><th style="width:80px">Qty</th><th style="width:120px">Price</th><th style="width:100px">Discount</th><th style="width:90px">GST %</th><th class="right" style="width:120px">Amount</th><th></th></tr></thead><tbody data-lines></tbody></table></div>
         <div class="row between"><button type="button" class="btn" data-act="addLine">+ Add line</button><div class="right" data-totals></div></div>
         <label class="f">Notes on invoice<textarea class="in" name="notes" maxlength="2000">${esc(invoice ? invoice.notes || '' : '')}</textarea></label>
         <div class="row" style="justify-content:flex-end"><a class="btn" href="${invoice ? '#/invoices/' + invoice.id : '#/invoices'}">Cancel</a>

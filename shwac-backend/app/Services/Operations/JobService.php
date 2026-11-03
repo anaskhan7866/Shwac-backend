@@ -123,6 +123,11 @@ class JobService
             $job->update($attrs);
             $this->log($job, $from, $to, $by, $note, $lat, $lng);
 
+            // A booking whose only job is cancelled must not stay "scheduled" forever.
+            if ($to === 'cancelled' && $job->booking && ! in_array($job->booking->status, ['completed', 'cancelled'], true)
+                && ! $job->booking->jobs()->whereKeyNot($job->id)->whereNotIn('status', ['completed', 'cancelled'])->exists()) {
+                $job->booking->update(['status' => 'cancelled', 'cancelled_at' => now(), 'cancel_reason' => mb_substr('Job '.$job->number.' cancelled'.($note ? ': '.$note : ''), 0, 255)]);
+            }
             if ($to === 'completed') {
                 $job->booking?->update(['status' => 'completed']);
                 if ($job->complaint && $job->complaint->isOpen()) {

@@ -54,7 +54,11 @@ class InvoiceController extends Controller
         $this->ensureVisible($customer, $request->user());
 
         $job = isset($data['service_job_id']) ? ServiceJob::findOrFail($data['service_job_id']) : null;
-        abort_if($job && $job->customer_id !== $customer->id, 422, 'Job belongs to another customer.');
+        if ($job) {
+            $this->ensureVisible($job, $request->user());
+            abort_if((int) $job->customer_id !== (int) $customer->id, 422, 'Job belongs to another customer.');
+            abort_if($job->invoice()->exists(), 422, 'This job already has an invoice.');
+        }
         $address = isset($data['customer_address_id']) ? CustomerAddress::where('customer_id', $customer->id)->findOrFail($data['customer_address_id']) : null;
 
         $warehouse = isset($data['stock_warehouse_id']) ? Warehouse::findOrFail($data['stock_warehouse_id']) : null;

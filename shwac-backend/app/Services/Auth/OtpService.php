@@ -77,6 +77,8 @@ class OtpService
             if ($user && ! $user->isCustomer()) {
                 throw ValidationException::withMessages(['phone' => 'This number belongs to a staff account. Use staff login.']);
             }
+            // The login exists but its customer record has another number: use that record, never a duplicate.
+            $customer ??= $user?->customer;
 
             if (! $user) {
                 $user = User::create([

@@ -27,6 +27,9 @@ class PaymentService
         $this->assertPayable($invoice, $amount);
 
         $payment = DB::transaction(function () use ($invoice, $amount, $method, $reference, $by) {
+            // Re-check against the locked row so two collections at once cannot both pass.
+            $invoice = Invoice::whereKey($invoice->id)->lockForUpdate()->firstOrFail();
+            $this->assertPayable($invoice, $amount);
             $payment = Payment::create([
                 'branch_id' => $invoice->branch_id,
                 'customer_id' => $invoice->customer_id,

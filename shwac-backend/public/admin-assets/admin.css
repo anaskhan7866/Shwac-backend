@@ -23,22 +23,25 @@ button { cursor: pointer; }
 .brand span { font-size: 12px; color: #A9BDBF; }
 .navgroup { display: flex; flex-direction: column; gap: 2px; }
 .navgroup h6 { margin: 0; font-size: 11px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: #8FA6A9; padding: 4px 14px; }
-.navgroup a { text-decoration: none; color: var(--side-ink); border-radius: 10px; padding: 9px 14px; font-weight: 700; display: flex; justify-content: space-between; align-items: center; min-height: 40px; }
+.navgroup a { text-decoration: none; color: var(--side-ink); border-radius: 10px; padding: 7px 14px; font-weight: 700; display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 36px; }
 .navgroup a:hover { background: #1C4249; color: #fff; }
 .navgroup a.on { background: var(--accent); color: #fff; }
-.badge { border-radius: 999px; padding: 1px 8px; font-size: 12px; color: #fff; background: #1C4249; }
+.badge { border-radius: 999px; padding: 0 7px; min-width: 22px; height: 20px; line-height: 20px; text-align: center; font-size: 12px; font-weight: 800; color: #fff; background: #1C4249; flex: none; }
 .badge.red { background: var(--bad); } .badge.amber { background: #B45309; } .badge.wa { background: var(--wa); } .badge.teal { background: var(--accent); }
 .me { margin-top: auto; display: flex; align-items: center; gap: 10px; padding: 12px 8px 0; border-top: 1px solid #23464D; }
 .avatar { width: 36px; height: 36px; border-radius: 999px; background: #1C4249; color: #7FD3DC; display: flex; align-items: center; justify-content: center; font-weight: 800; flex: none; }
 .me .who { flex: 1; min-width: 0; } .me .who b { color: #fff; display: block; } .me .who span { font-size: 12px; color: #A9BDBF; }
+.me .who b, .me .who span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.me .linkbtn { flex: none; }
 .linkbtn { background: none; border: 0; color: #7FD3DC; font-weight: 700; padding: 6px; }
 .main { flex: 999 1 560px; min-width: 0; padding: 24px 28px 48px; }
 .page { max-width: 1260px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; }
-.head { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; justify-content: space-between; }
+.head { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; }
 .head h1 { margin: 0; font-size: 26px; font-weight: 800; letter-spacing: -.02em; }
 .head .sub { color: var(--muted); margin-top: 4px; max-width: 760px; }
 .crumb { font-size: 13px; color: var(--muted); font-weight: 600; } .crumb a { text-decoration: none; }
 .tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.tools form.row { flex-wrap: nowrap; gap: 8px; } .tools .in:not(.search) { width: auto; }
 
 /* Cards & grids */
 .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 18px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
@@ -64,6 +67,8 @@ table.t { width: 100%; border-collapse: collapse; min-width: 720px; }
 .t th { text-align: left; font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); padding: 12px 14px; border-bottom: 1px solid var(--line); white-space: nowrap; }
 .t td { padding: 12px 14px; border-bottom: 1px solid var(--line2); vertical-align: middle; }
 .t tr:last-child td { border-bottom: 0; }
+.t th.right, .t td.right { text-align: right; }
+.t td .btn + .btn { margin-left: 6px; } .t td.acts { white-space: nowrap; width: 1%; }
 .t tr.click { cursor: pointer; } .t tr.click:hover td { background: #F8FBFA; }
 .t td .sub { font-size: 12px; color: var(--muted); }
 .pager { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; border-top: 1px solid var(--line2); color: var(--muted); font-size: 13px; }
@@ -127,8 +132,15 @@ textarea.in { min-height: 90px; resize: vertical; line-height: 1.5; }
 /* Matrix */
 .matrix td, .matrix th { text-align: center; } .matrix td:first-child, .matrix th:first-child { text-align: left; }
 
+/* Desktop: sidebar stays in place and scrolls on its own; only the page content scrolls. */
+@media (min-width: 801px) {
+  .shell { flex-wrap: nowrap; }
+  .side { flex: 0 0 248px; width: 248px; position: sticky; top: 0; height: 100vh; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #2C5259 transparent; }
+}
+
 .menu-btn { display: none; margin-left: auto; background: #1C4249; color: #fff; border: 0; border-radius: 10px; min-height: 40px; padding: 0 14px; font-weight: 800; }
 @media (max-width: 800px) {
+  .shell { align-content: flex-start; }
   .side { flex-basis: 100%; padding: 12px 14px; gap: 10px; }
   .menu-btn { display: inline-flex; align-items: center; }
   .side:not(.open) > :not(.brand) { display: none !important; }

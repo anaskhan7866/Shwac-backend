@@ -291,7 +291,8 @@
   page('/jobs/:id', async ([id]) => {
     const [j, techs] = await Promise.all([SH.get('/admin/jobs/' + id), SH.can('jobs.manage') ? SH.techs() : []]);
     const manage = SH.can('jobs.manage');
-    const nexts = { pending: ['cancelled'], assigned: ['accepted', 'en_route', 'in_progress', 'cancelled'], accepted: ['en_route', 'in_progress', 'cancelled'], en_route: ['in_progress', 'cancelled'], in_progress: ['completed', 'cancelled'] }[j.status] || [];
+    // Must match ServiceJob::TRANSITIONS on the server (an assigned job is accepted before it can move on).
+    const nexts = { pending: ['cancelled'], assigned: ['accepted', 'cancelled'], accepted: ['en_route', 'in_progress', 'cancelled'], en_route: ['in_progress', 'cancelled'], in_progress: ['completed', 'cancelled'] }[j.status] || [];
     return {
       html: `${head(j.service ? j.service.name : SH.label(j.type) + ' visit', pill(j.status), j.invoice ? `<a class="btn" href="#/invoices/${j.invoice.id}">Invoice ${esc(j.invoice.number || 'draft')}</a>` : (SH.can('invoices.manage') && j.status !== 'cancelled' ? `<a class="btn" href="#/invoices/new?customer=${j.customer_id}&job=${j.id}">Make invoice</a>` : ''), `<a href="#/jobs">Service jobs</a> / <span class="mono">${esc(j.number)}</span>`)}
         <div class="grid two"><div style="display:flex;flex-direction:column;gap:14px">
@@ -433,7 +434,9 @@
       init: async () => {
         if (!window.L) { document.getElementById('map').innerHTML = '<div class="empty">The map library did not load. Check the internet connection.</div>'; }
         else {
-          map = window.L.map('map').setView([28.98, 77.70], 12);
+          const box = document.getElementById('map');
+          if (!box || box._leaflet_id || v !== SH.view) return; // page already replaced or map already built
+          map = window.L.map(box).setView([28.98, 77.70], 12);
           window.L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' }).addTo(map);
           layer = window.L.layerGroup().addTo(map);
         }
