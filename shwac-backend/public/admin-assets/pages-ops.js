@@ -13,6 +13,38 @@
     if (m === null || m === undefined) return '<span class="pill">—</span>';
     return `<span class="pill ${m < 120 ? 'warn' : 'ok'}">${SH.mins(m)} left</span>`;
   };
+  // ---- V2 call filters (Bookings + Service jobs). URL keys: svc (c<catId>|s<svcId>), priority, tech, from, to, place, f_<field>.
+  const callFilterData = () => Promise.all([SH.get('/admin/catalog/categories'), SH.get('/admin/catalog/services'), SH.can('jobs.view') ? SH.techs() : []]);
+  const callFilterParams = (q) => {
+    const o = { priority: q.priority, technician_id: q.tech, from: q.from, to: q.to, place: q.place };
+    if (q.svc && q.svc[0] === 'c') o.category_id = q.svc.slice(1); else if (q.svc && q.svc[0] === 's') o.service_id = q.svc.slice(1);
+    Object.keys(q).filter((k) => k.startsWith('f_') && q[k]).forEach((k) => { o['form[' + k.slice(2) + ']'] = q[k]; });
+    return o;
+  };
+  const callFilterKeys = (q) => ['svc', 'priority', 'tech', 'from', 'to', 'place', ...Object.keys(q).filter((k) => k.startsWith('f_'))];
+  const callFilterHtml = (q, cats, svcs, techs) => {
+    const sel = q.svc && q.svc[0] === 's' ? svcs.find((s) => String(s.id) === q.svc.slice(1)) : null;
+    const fields = sel ? (sel.form_schema || []).filter((f) => f.type === 'select' && (f.options || []).length) : [];
+    const active = callFilterKeys(q).filter((k) => q[k]).length;
+    return `<details class="card filters" ${active ? 'open' : ''}><summary>Filters${active ? ` <span class="pill teal">${active} on</span>` : ''}</summary>
+      <form data-submit="applyFilters" style="display:flex;flex-direction:column;gap:12px"><div class="form">
+        <label class="f">Service<select class="in" name="svc" data-change="filterSvc"><option value="">All services</option>${cats.map((c) => `<optgroup label="${esc(c.name)}">${opt('c' + c.id, 'All ' + c.name, q.svc)}${svcs.filter((s) => s.service_category_id === c.id).map((s) => opt('s' + s.id, s.name + (s.is_active === false ? ' (off)' : ''), q.svc)).join('')}</optgroup>`).join('')}</select></label>
+        <label class="f">Priority<select class="in" name="priority">${[['', 'Any'], ['high', 'High'], ['medium', 'Medium'], ['low', 'Low']].map(([v, l]) => opt(v, l, q.priority)).join('')}</select></label>
+        ${techs.length ? `<label class="f">Technician<select class="in" name="tech"><option value="">Any</option>${techs.map((t) => opt(t.id, t.name, q.tech)).join('')}</select></label>` : ''}
+        <label class="f">Visit from<input class="in" type="date" name="from" value="${esc(q.from || '')}"></label>
+        <label class="f">Visit to<input class="in" type="date" name="to" value="${esc(q.to || '')}"></label>
+        <label class="f">City or pincode<input class="in" name="place" value="${esc(q.place || '')}" placeholder="e.g. Meerut or 250001"></label>
+        ${fields.map((f) => `<label class="f">${esc(f.label)}<select class="in" name="f_${esc(f.key)}"><option value="">Any</option>${f.options.map((o) => opt(o, o, q['f_' + f.key])).join('')}</select></label>`).join('')}
+      </div>${sel ? '' : '<div class="small muted">Pick one service to also filter by its own fields (service type, warranty, tonnage…).</div>'}
+      <div class="row" style="justify-content:flex-end"><button type="button" class="btn ghost" data-act="clearFilters">Clear</button><button class="btn primary" type="submit">Apply filters</button></div></form></details>`;
+  };
+  const callFilterActions = (q) => ({
+    applyFilters: (f) => { const b = SH.formData(f); const patch = { page: '' }; callFilterKeys(q).forEach((k) => { patch[k] = ''; }); Object.keys(b).forEach((k) => { patch[k] = b[k]; }); SH.setQuery(patch); },
+    // Changing the service shows its own fields: clear the old ones and re-render.
+    filterSvc: (el) => { const patch = { svc: el.value, page: '' }; Object.keys(q).filter((k) => k.startsWith('f_')).forEach((k) => { patch[k] = ''; }); SH.setQuery(patch); },
+    clearFilters: () => { const patch = { page: '' }; callFilterKeys(q).forEach((k) => { patch[k] = ''; }); SH.setQuery(patch); },
+  });
+
   const techOptions = (techs, cur, branchId) => `<option value="">Choose technician</option>${techs.filter((t) => !branchId || String(t.branch_id) === String(branchId)).map((t) => opt(t.id, `${t.name} (${t.active_jobs} active job${t.active_jobs === 1 ? '' : 's'})`, cur)).join('')}`;
 
   // =============================================================== DASHBOARD
@@ -178,15 +210,20 @@
 
   // =============================================================== BOOKINGS
   page('/bookings', async (p, q) => {
-    const r = await SH.get('/admin/bookings', SH.withBranch({ page: q.page, q: q.q, status: q.status, from: q.from, to: q.to }));
+    const [r, [cats, svcs, techs]] = await Promise.all([
+      SH.get('/admin/bookings', SH.withBranch(Object.assign({ page: q.page, q: q.q, status: q.status }, callFilterParams(q)))),
+      callFilterData(),
+    ]);
     return {
       html: `${head('Bookings', 'Service visits booked by customers (app / website) or by the office.', `${searchBox(q.q, 'Booking no., name or phone')}${SH.can('bookings.manage') ? '<a class="btn primary" href="#/bookings/new">+ New booking</a>' : ''}`)}
         ${chips('status', q.status || '', [['', 'All'], ['pending', 'Pending'], ['confirmed', 'Confirmed'], ['scheduled', 'Scheduled'], ['completed', 'Completed'], ['cancelled', 'Cancelled']])}
+        ${callFilterHtml(q, cats, svcs, techs)}
         <div class="tablebox"><table class="t"><thead><tr><th>Booking</th><th>Customer</th><th>Service</th><th>Visit</th><th>Source</th><th>Job</th><th>Status</th></tr></thead><tbody>
         ${r.data.map((b) => `<tr class="click" data-href="#/bookings/${b.id}"><td class="mono">${esc(b.number)}</td><td><b>${esc(b.customer && b.customer.name)}</b><div class="sub">${esc(b.customer && b.customer.phone)}</div></td>
           <td>${esc(b.service && b.service.name)}<div class="sub">${money(b.quoted_amount)}</div></td><td>${d(b.scheduled_date)}<div class="sub">${esc(b.time_slot || '')}</div></td><td>${esc(SH.label(b.source))}</td>
-          <td>${(b.jobs || []).map((j) => `<span class="mono">${esc(j.number)}</span> ${pill(j.status)}`).join('<br>') || '—'}</td><td>${pill(b.status)}</td></tr>`).join('') || '<tr><td colspan="7" class="empty">No bookings.</td></tr>'}
+          <td>${(b.jobs || []).map((j) => `<span class="mono">${esc(j.number)}</span> ${pill(j.status)}`).join('<br>') || '—'}</td><td>${pill(b.status)}${b.priority && b.priority !== 'medium' ? `<div style="margin-top:4px">${pill(b.priority)}</div>` : ''}</td></tr>`).join('') || '<tr><td colspan="7" class="empty">No bookings match.</td></tr>'}
         </tbody></table>${pager(r)}</div>`,
+      actions: callFilterActions(q),
     };
   });
 
@@ -206,19 +243,35 @@
   };
 
   page('/bookings/new', async (p, q) => {
-    const svcs = (await SH.get('/admin/catalog/services')).filter((s) => s.is_active !== false);
+    const [allSvcs, techs] = await Promise.all([SH.get('/admin/catalog/services'), SH.can('jobs.manage') ? SH.techs() : []]);
+    const svcs = allSvcs.filter((s) => s.is_active !== false);
     let pre = null; if (q.customer) { try { pre = await SH.get('/admin/customers/' + q.customer); } catch (e) { pre = null; } }
+    let cust = null; // the picked customer, with their appliances
+    // Fill the service questions from an appliance's saved details (V2 step 4).
+    const prefill = (prod) => {
+      if (!prod) return;
+      const saved = Object.assign({}, prod.details || {}, prod.brand ? { brand: prod.brand } : {}, prod.serial_no ? { model_serial: prod.serial_no } : {}, prod.warranty_status ? { warranty_status: prod.warranty_status } : {});
+      Object.entries(saved).forEach(([k, val]) => {
+        const el = document.querySelector(`[name="form_data.${k}"]`);
+        if (el && !el.value && !Array.isArray(val)) el.value = String(val);
+      });
+    };
+    const productFor = (svcId) => cust && (cust.products || []).find((x) => String(x.service_id) === String(svcId));
     const v = {
       html: `${head('New booking', 'Book a visit for a customer who called, messaged or walked in.', '', '<a href="#/bookings">Bookings</a> / New')}
         <form data-submit="save" class="card"><div class="form">
           <div class="full">${SH.customerPicker('customer_id', 'Customer', pre, 'customerPicked')}</div>
           <div class="full muted small">New customer? <a href="#/customers/new">Add the customer first</a>.</div>
           <label class="f">Visit address<select class="in" name="customer_address_id" data-addr><option value="">Default address</option></select></label>
-          <label class="f">Appliance<select class="in" name="customer_product_id" data-prod><option value="">—</option></select></label>
+          <label class="f">Appliance<select class="in" name="customer_product_id" data-prod data-change="prodPicked"><option value="">New / not listed</option></select></label>
           <label class="f full">Service<select class="in" name="service_id" required data-change="svc"><option value="">Choose service</option>${svcs.map((s) => opt(s.id, `${s.name} · ${money(s.base_price)} + GST`)).join('')}</select></label>
           <div class="full form" data-fields></div>
-          <label class="f">Date<input class="in" type="date" name="scheduled_date" min="${SH.today()}" value="${SH.today()}" required></label>
-          <label class="f">Time slot<select class="in" name="time_slot">${SLOTS.map((s) => opt(s, s)).join('')}</select></label>
+          <label class="f">Visit date *<input class="in" type="date" name="scheduled_date" min="${SH.today()}" value="${SH.today()}" required></label>
+          <label class="f">Time slot<select class="in" name="time_slot"><option value="">Any time</option>${SLOTS.map((s) => opt(s, s)).join('')}</select></label>
+          <label class="f">Call priority<select class="in" name="priority">${[['medium', 'Medium'], ['high', 'High'], ['low', 'Low']].map(([v, l]) => opt(v, l, 'medium')).join('')}</select></label>
+          ${SH.can('jobs.manage') ? `<label class="f">Assigned technician<select class="in" name="technician_id" data-tech>${techOptions(techs, null, null).replace('Choose technician', 'Assign later')}</select></label>` : ''}
+          <label class="f">Service charge (₹ + GST)<input class="in" type="number" step="0.01" min="0" name="quoted_amount" data-num data-charge placeholder="From the service"></label>
+          <label class="f">Alt mobile / WhatsApp<input class="in" type="tel" name="whatsapp" pattern="[6-9]\\d{9}" maxlength="10" data-wa placeholder="10-digit number"></label>
           <label class="f">Booked via<select class="in" name="source">${['phone', 'whatsapp', 'walk_in', 'admin'].map((s) => opt(s, SH.label(s))).join('')}</select></label>
           <label class="f full">Notes<textarea class="in" name="notes" maxlength="2000"></textarea></label>
         </div><div class="row" style="justify-content:flex-end"><a class="btn" href="#/bookings">Cancel</a><button class="btn primary" type="submit">Confirm booking</button></div></form>`,
@@ -226,14 +279,36 @@
       actions: {
         customerPicked: async () => {
           const id = document.querySelector('[name=customer_id]').value; if (!id) return;
-          const c = await SH.get('/admin/customers/' + id);
+          const c = await SH.get('/admin/customers/' + id); cust = c;
           document.querySelector('[data-addr]').innerHTML = c.addresses.map((a) => opt(a.id, `${a.label || 'Address'}: ${SH.addrText(a)}`, (c.addresses.find((x) => x.is_default) || {}).id)).join('');
-          document.querySelector('[data-prod]').innerHTML = '<option value="">—</option>' + (c.products || []).map((x) => opt(x.id, `${x.product_name} ${x.brand || ''} ${x.serial_no ? '· ' + x.serial_no : ''}`)).join('');
+          document.querySelector('[data-prod]').innerHTML = '<option value="">New / not listed</option>' + (c.products || []).map((x) => opt(x.id, `${x.product_name} ${x.brand || ''} ${x.serial_no ? '· ' + x.serial_no : ''}`)).join('');
+          const svcSel = document.querySelector('[name=service_id]'); const prod = svcSel && productFor(svcSel.value);
+          if (prod) { document.querySelector('[data-prod]').value = String(prod.id); prefill(prod); }
+          const wa = document.querySelector('[data-wa]'); if (wa) wa.value = c.whatsapp && c.whatsapp !== c.phone ? c.whatsapp : '';
+          const tech = document.querySelector('[data-tech]'); if (tech) tech.innerHTML = techOptions(techs, null, c.branch_id).replace('Choose technician', 'Assign later');
         },
-        svc: (el) => { const s = svcs.find((x) => String(x.id) === el.value); document.querySelector('[data-fields]').innerHTML = s ? (s.form_schema || []).map(fieldHtml).join('') : ''; },
+        svc: (el) => {
+          const s = svcs.find((x) => String(x.id) === el.value);
+          document.querySelector('[data-fields]').innerHTML = s ? (s.form_schema || []).map(fieldHtml).join('') : '';
+          const ch = document.querySelector('[data-charge]'); if (ch) ch.value = s ? Number(s.base_price) : '';
+          // The customer's saved appliance for this service is picked and its details filled in.
+          const sel = document.querySelector('[data-prod]'); const current = cust && (cust.products || []).find((x) => String(x.id) === sel.value);
+          const prod = current && String(current.service_id || '') === el.value ? current : productFor(el.value);
+          if (prod) { sel.value = String(prod.id); prefill(prod); } else if (current && current.service_id) { sel.value = ''; }
+        },
+        prodPicked: (el) => {
+          const prod = cust && (cust.products || []).find((x) => String(x.id) === el.value); if (!prod) return;
+          const svcSel = document.querySelector('[name=service_id]');
+          if (prod.service_id && svcSel.value !== String(prod.service_id) && svcs.some((s) => String(s.id) === String(prod.service_id))) {
+            svcSel.value = String(prod.service_id); v.actions.svc(svcSel); // shows that service's questions, then fills them
+            el.value = String(prod.id);
+          }
+          prefill(prod);
+        },
         save: async (f) => {
           const b = SH.formData(f); if (!b.customer_id) { SH.toast('Choose the customer first.', true); return; }
-          ['customer_address_id', 'customer_product_id', 'notes'].forEach((k) => { if (b[k] === '') delete b[k]; });
+          ['customer_address_id', 'customer_product_id', 'notes', 'time_slot', 'technician_id', 'whatsapp', 'quoted_amount'].forEach((k) => { if (b[k] === '' || b[k] === null || Number.isNaN(b[k])) delete b[k]; });
+          if (b.technician_id) b.technician_id = Number(b.technician_id);
           const r = await SH.post('/admin/bookings', b); SH.toast(r.number + ' booked.'); SH.goThen('/bookings/' + r.id, () => SH.shareFrom(r, 'Send the booking confirmation?'));
         },
       },
@@ -245,21 +320,24 @@
     const b = await SH.get('/admin/bookings/' + id);
     const open = !['completed', 'cancelled'].includes(b.status); const manage = SH.can('bookings.manage');
     return {
-      html: `${head(b.service ? b.service.name : 'Booking', pill(b.status), manage && open ? '<button class="btn" data-act="resched">Reschedule</button><button class="btn danger" data-act="cancel">Cancel booking</button>' : '', `<a href="#/bookings">Bookings</a> / <span class="mono">${esc(b.number)}</span>`)}
+      html: `${head(b.service ? b.service.name : 'Booking', pill(b.status), manage && open ? '<button class="btn" data-act="resched">Edit visit</button><button class="btn danger" data-act="cancel">Cancel booking</button>' : '', `<a href="#/bookings">Bookings</a> / <span class="mono">${esc(b.number)}</span>`)}
         <div class="grid two"><section class="card"><h2>Booking</h2><dl class="kv">
           <dt>Customer</dt><dd><a href="#/customers/${b.customer.id}">${esc(b.customer.name)}</a> · ${esc(b.customer.phone)}</dd>
           <dt>Address</dt><dd>${esc(SH.addrText(b.address))}</dd><dt>Visit</dt><dd>${d(b.scheduled_date)} · ${esc(b.time_slot || 'Any time')}</dd>
-          <dt>Estimate</dt><dd>${money(b.quoted_amount)} + GST</dd><dt>Booked via</dt><dd>${esc(SH.label(b.source))} · ${dt(b.created_at)}</dd>
+          <dt>Priority</dt><dd>${pill(b.priority || 'medium')}</dd>
+          <dt>Service charge</dt><dd>${money(b.quoted_amount)} + GST</dd><dt>Booked via</dt><dd>${esc(SH.label(b.source))} · ${dt(b.created_at)}</dd>
           ${Object.entries(b.form_data || {}).map(([k, v]) => `<dt>${esc(SH.label(k))}</dt><dd>${esc(Array.isArray(v) ? v.join(', ') : (v === true ? 'Yes' : v === false ? 'No' : v))}</dd>`).join('')}
           ${b.notes ? `<dt>Notes</dt><dd>${esc(b.notes)}</dd>` : ''}${b.cancel_reason ? `<dt>Cancelled</dt><dd>${esc(b.cancel_reason)}</dd>` : ''}
         </dl></section>
         <section class="card"><h2>Service jobs</h2><div class="list">${(b.jobs || []).map((j) => `<a class="row between" href="#/jobs/${j.id}" style="text-decoration:none;color:inherit"><span><span class="mono">${esc(j.number)}</span><div class="small muted">${esc(j.technician ? j.technician.name : 'Unassigned')}</div></span>${pill(j.status)}</a>`).join('') || '<div class="muted">No job.</div>'}</div></section></div>`,
       actions: {
         cancel: async () => { const r = await SH.confirm('Cancel this booking?', 'Open jobs for it are cancelled too.', 'Cancel booking', 'Reason'); if (!r) return; await SH.post(`/admin/bookings/${id}/cancel`, { reason: r }); SH.toast('Booking cancelled.'); SH.reload(); },
-        resched: () => SH.openModal(`<h3>Reschedule</h3><form data-submit="save" class="form"><label class="f">Date<input class="in" type="date" name="scheduled_date" min="${SH.today()}" value="${SH.isoDay(b.scheduled_date)}" required></label>
-          <label class="f">Time slot<select class="in" name="time_slot">${SLOTS.map((s) => opt(s, s, b.time_slot)).join('')}</select></label>
+        resched: () => SH.openModal(`<h3>Edit visit</h3><form data-submit="save" class="form"><label class="f">Date<input class="in" type="date" name="scheduled_date" min="${SH.today()}" value="${SH.isoDay(b.scheduled_date)}" required></label>
+          <label class="f">Time slot<select class="in" name="time_slot"><option value="">Any time</option>${SLOTS.map((s) => opt(s, s, b.time_slot)).join('')}</select></label>
+          <label class="f">Call priority<select class="in" name="priority">${[['high', 'High'], ['medium', 'Medium'], ['low', 'Low']].map(([v, l]) => opt(v, l, b.priority || 'medium')).join('')}</select></label>
+          <label class="f">Service charge (₹, before GST)<input class="in" type="number" step="0.01" min="0" name="quoted_amount" data-num value="${esc(Number(b.quoted_amount))}" required></label>
           <div class="actions full"><button type="button" class="btn" data-act="closeModal">Cancel</button><button class="btn primary" type="submit">Save</button></div></form>`, {
-          save: async (f) => { await SH.patch('/admin/bookings/' + id, SH.formData(f)); SH.closeModal(); SH.toast('Rescheduled.'); SH.reload(); },
+          save: async (f) => { await SH.patch('/admin/bookings/' + id, SH.formData(f)); SH.closeModal(); SH.toast('Visit updated.'); SH.reload(); },
         }),
       },
     };
@@ -268,19 +346,21 @@
   // =============================================================== JOBS
   page('/jobs', async (p, q) => {
     const status = q.status || (q.unassigned ? 'unassigned' : (q.live ? 'live' : ''));
-    const params = SH.withBranch({ page: q.page, per_page: 30, date: q.date });
+    const params = SH.withBranch(Object.assign({ page: q.page, per_page: 30, date: q.date, q: q.q }, callFilterParams(q)));
     if (status === 'live') params.live = 1; else if (status === 'unassigned') params.unassigned = 1; else if (status) params.status = status;
-    const [r, techs] = await Promise.all([SH.get('/admin/jobs', params), SH.can('jobs.manage') ? SH.techs() : []]);
+    const [r, [cats, svcs, techs]] = await Promise.all([SH.get('/admin/jobs', params), callFilterData()]);
     return {
-      html: `${head('Service jobs', 'Every visit a technician makes: from bookings, complaints and installations.', `<form data-submit="date" class="row"><input class="in" type="date" name="date" value="${esc(q.date || '')}"><button class="btn" type="submit">Filter day</button>${q.date ? '<button class="btn ghost" data-act="clearDate">Clear</button>' : ''}</form>`)}
+      html: `${head('Service jobs', 'Every visit a technician makes: from bookings, complaints and installations.', `${searchBox(q.q, 'Job no., customer name or phone')}<form data-submit="date" class="row"><input class="in" type="date" name="date" value="${esc(q.date || '')}"><button class="btn" type="submit">Filter day</button>${q.date ? '<button class="btn ghost" data-act="clearDate">Clear</button>' : ''}</form>`)}
         ${techs.length ? `<div class="chips">${techs.map((t) => `<span class="chip">${esc(t.name)} · ${t.active_jobs} active</span>`).join('')}</div>` : ''}
         ${chips('status', status, [['', 'All'], ['unassigned', 'Waiting for technician'], ['live', 'Live'], ['assigned', 'Assigned'], ['en_route', 'On the way'], ['in_progress', 'In progress'], ['completed', 'Completed'], ['cancelled', 'Cancelled']])}
+        ${callFilterHtml(q, cats, svcs, techs)}
         <div class="tablebox"><table class="t"><thead><tr><th>Job</th><th>Customer</th><th>Work</th><th>When</th><th>Technician</th><th>Status</th></tr></thead><tbody>
         ${r.data.map((j) => `<tr class="click" data-href="#/jobs/${j.id}"><td class="mono">${esc(j.number)}</td><td><b>${esc(j.customer && j.customer.name)}</b><div class="sub">${esc(j.address ? j.address.line1 + ', ' + j.address.city : '')}</div></td>
           <td>${esc(j.service ? j.service.name : SH.label(j.type))}</td><td>${d(j.scheduled_date)}<div class="sub">${esc(j.time_slot || '')}</div></td>
-          <td>${j.technician ? esc(j.technician.name) : (SH.can('jobs.manage') && j.status === 'pending' ? `<select class="in" style="min-width:180px" data-change="quickAssign" data-id="${j.id}">${techOptions(techs, null, j.branch_id)}</select>` : '<span class="muted">—</span>')}</td><td>${pill(j.status)}</td></tr>`).join('') || '<tr><td colspan="6" class="empty">No jobs in this view.</td></tr>'}
+          <td>${j.technician ? esc(j.technician.name) : (SH.can('jobs.manage') && j.status === 'pending' ? `<select class="in" style="min-width:180px" data-change="quickAssign" data-id="${j.id}">${techOptions(techs, null, j.branch_id)}</select>` : '<span class="muted">—</span>')}</td><td>${pill(j.status)}${j.booking && j.booking.priority && j.booking.priority !== 'medium' ? `<div style="margin-top:4px">${pill(j.booking.priority)}</div>` : ''}</td></tr>`).join('') || '<tr><td colspan="6" class="empty">No jobs in this view.</td></tr>'}
         </tbody></table>${pager(r)}</div>`,
       actions: {
+        ...callFilterActions(q),
         date: (f) => SH.setQuery({ date: SH.formData(f).date, page: '' }),
         clearDate: () => SH.setQuery({ date: '' }),
         quickAssign: async (el) => { if (!el.value) return; const r = await SH.post(`/admin/jobs/${el.dataset.id}/assign`, { technician_id: el.value }); SH.toast(r.number + ' assigned.'); await SH.reload(); SH.shareFrom(r, 'Send the technician details?'); },
@@ -300,7 +380,7 @@
             <dt>Customer</dt><dd><a href="#/customers/${j.customer.id}">${esc(j.customer.name)}</a> · <a href="tel:+91${esc(j.customer.phone)}">${esc(j.customer.phone)}</a></dd>
             <dt>Address</dt><dd>${esc(SH.addrText(j.address))} · <a href="${SH.mapLink(j.address)}" target="_blank" rel="noopener">Open in Google Maps</a></dd>
             <dt>When</dt><dd>${d(j.scheduled_date)} ${esc(j.time_slot || '')}</dd>
-            ${j.booking ? `<dt>Booking</dt><dd><a href="#/bookings/${j.booking.id}">${esc(j.booking.number)}</a></dd>` : ''}
+            ${j.booking ? `<dt>Booking</dt><dd><a href="#/bookings/${j.booking.id}">${esc(j.booking.number)}</a> ${pill(j.booking.priority || 'medium')}</dd><dt>Service charge</dt><dd>${money(j.booking.quoted_amount)} + GST</dd>` : ''}
             ${j.complaint ? `<dt>Complaint</dt><dd><a href="#/complaints/${j.complaint.id}">${esc(j.complaint.number)}</a> · ${esc(j.complaint.subject)}</dd>` : ''}
             <dt>Started</dt><dd>${dt(j.started_at)}</dd><dt>Completed</dt><dd>${dt(j.completed_at)}</dd>
             ${j.work_summary ? `<dt>Work done</dt><dd>${esc(j.work_summary)}</dd>` : ''}
@@ -364,7 +444,7 @@
             ${c.addresses.map((a) => `<div class="row between"><span class="grow"><b>${esc(a.label || 'Address')}</b> ${a.is_default ? '<span class="pill teal">Default</span>' : ''}<div>${esc(SH.addrText(a))}, ${esc(a.state)}</div><div class="small muted">${a.lat ? 'Location saved' : 'Location is saved on the first visit'} · <a href="${SH.mapLink(a)}" target="_blank" rel="noopener">Map</a></div></span>${m ? `<button class="btn sm" data-act="editAddr" data-id="${a.id}">Edit</button>` : ''}</div>`).join('')}
           </div></section>
           <section class="card"><div class="cardhead"><h2>Appliances</h2>${m ? '<button class="btn sm" data-act="addProd">+ Add</button>' : ''}</div><div class="list">
-            ${(c.products || []).map((x) => `<div class="row between"><span class="grow"><b>${esc(x.product_name)}</b> ${esc(x.brand || '')} ${esc(x.model || '')}<div class="small muted">${x.serial_no ? 'S/N ' + esc(x.serial_no) + ' · ' : ''}${x.warranty_until ? 'Warranty till ' + d(x.warranty_until) : 'No warranty date'}</div></span>${m ? `<button class="btn sm" data-act="editProd" data-id="${x.id}">Edit</button>` : ''}</div>`).join('') || '<div class="muted">No appliances recorded.</div>'}
+            ${(c.products || []).map((x) => `<div class="row between"><span class="grow"><b>${esc(x.product_name)}</b> ${esc(x.brand || '')} ${esc(x.model || '')}<div class="small muted">${x.serial_no ? 'S/N ' + esc(x.serial_no) + ' · ' : ''}${x.warranty_status ? esc(x.warranty_status) + (x.warranty_until ? ' till ' + d(x.warranty_until) : '') : (x.warranty_until ? 'Warranty till ' + d(x.warranty_until) : 'No warranty date')}</div>${x.details && Object.keys(x.details).length ? `<div class="small muted">${Object.entries(x.details).filter(([k]) => k !== 'brand' && k !== 'model_serial').map(([k, val]) => `${esc(SH.label(k))}: ${esc(Array.isArray(val) ? val.join(', ') : val)}`).join(' · ')}</div>` : ''}</span>${m ? `<button class="btn sm" data-act="editProd" data-id="${x.id}">Edit</button>` : ''}</div>`).join('') || '<div class="muted">No appliances recorded.</div>'}
           </div></section>
         </div>
         <div class="grid wide">
@@ -401,6 +481,7 @@
         <label class="f">Purchase date<input class="in" type="date" name="purchase_date" value="${esc(SH.isoDay(x.purchase_date))}"></label>
         <label class="f">Installed on<input class="in" type="date" name="installed_on" value="${esc(SH.isoDay(x.installed_on))}"></label>
         <label class="f">Warranty until<input class="in" type="date" name="warranty_until" value="${esc(SH.isoDay(x.warranty_until))}"></label>
+        <label class="f">Warranty status<select class="in" name="warranty_status">${[['', '—'], ['In-Warranty', 'In-Warranty'], ['Out of Warranty', 'Out of Warranty'], ['AMC', 'AMC']].map(([v, l]) => opt(v, l, x.warranty_status || '')).join('')}</select></label>
         <div class="actions full"><button type="button" class="btn" data-act="closeModal">Cancel</button><button class="btn primary" type="submit">Save</button></div></form>`, {
         save: async (f) => { const b = SH.clean(SH.formData(f)); if (x.id) await SH.patch(`/admin/customers/${id}/products/${x.id}`, b); else await SH.post(`/admin/customers/${id}/products`, b); SH.closeModal(); SH.toast('Appliance saved.'); SH.reload(); },
       });

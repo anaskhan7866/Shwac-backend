@@ -33,7 +33,7 @@
     cancelled: ['bad', 'Cancelled'], confirmed: ['teal', 'Confirmed'], scheduled: ['teal', 'Scheduled'], draft: ['', 'Draft'], issued: ['teal', 'Issued'],
     partially_paid: ['warn', 'Part paid'], paid: ['ok', 'Paid'], overdue: ['bad', 'Overdue'], success: ['ok', 'Received'], failed: ['bad', 'Failed'],
     pending_verification: ['warn', 'To verify'], rejected: ['bad', 'Rejected'], approved: ['ok', 'Approved'], ready: ['teal', 'To send'], sent: ['ok', 'Sent'],
-    critical: ['bad', 'Critical'], high: ['warn', 'High'], normal: ['', 'Normal'], low: ['', 'Low'], on_duty: ['ok', 'On duty'], checked_out: ['', 'Checked out'],
+    critical: ['bad', 'Critical'], high: ['warn', 'High'], medium: ['blue', 'Medium'], normal: ['', 'Normal'], low: ['', 'Low'], on_duty: ['ok', 'On duty'], checked_out: ['', 'Checked out'],
     not_checked_in: ['bad', 'Not checked in'], active: ['ok', 'Active'], inactive: ['bad', 'Inactive'], skipped: ['', 'Skipped'],
   };
   SH.pill = (s, text) => { const p = PILL[s] || ['', SH.label(s)]; return `<span class="pill ${p[0]}">${esc(text || p[1])}</span>`; };

@@ -23,7 +23,7 @@ class JobController extends Controller
 {
     use ResolvesInvoiceLines;
 
-    private const WITH = ['customer:id,name,phone,whatsapp', 'address', 'branch:id,name,state_code', 'service:id,name,base_price,tax_rate', 'booking:id,number,form_data,notes',
+    private const WITH = ['customer:id,name,phone,whatsapp', 'address', 'branch:id,name,state_code', 'service:id,name,base_price,tax_rate', 'booking:id,number,form_data,notes,priority,quoted_amount',
         'complaint:id,number,subject,description,priority,sla_resolution_due_at,customer_product_id', 'complaint.customerProduct'];
 
     public function index(Request $request): JsonResponse
@@ -100,7 +100,9 @@ class JobController extends Controller
         abort_unless(in_array($job->status, ['in_progress', 'completed'], true), 422, 'Start the job before billing.');
         abort_if($job->invoice()->exists(), 422, 'This job already has an invoice.');
 
-        $lines = $this->validatedLines($request, allowPriceOverride: false);
+        // The job's own service is billed at the charge the office set for this call.
+        $callCharge = $job->booking && $job->service_id ? [(int) $job->service_id => $job->booking->quoted_amount] : [];
+        $lines = $this->validatedLines($request, allowPriceOverride: false, servicePrices: $callCharge);
         $van = $inventory->vanFor($request->user());
 
         $invoice = \DB::transaction(function () use ($invoices, $job, $lines, $request, $van) {

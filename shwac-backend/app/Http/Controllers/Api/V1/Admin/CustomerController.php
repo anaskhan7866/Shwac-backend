@@ -128,6 +128,7 @@ class CustomerController extends Controller
             'purchase_date' => ['nullable', 'date'],
             'installed_on' => ['nullable', 'date'],
             'warranty_until' => ['nullable', 'date'],
+            'warranty_status' => ['nullable', 'string', 'max:20'],
         ]);
 
         return response()->json($customer->products()->create($data), 201);
@@ -139,6 +140,7 @@ class CustomerController extends Controller
         abort_unless($product->customer_id === $customer->id, 404);
         $product->update($request->validate([
             'category' => ['nullable', 'string', 'max:60'],
+            'warranty_status' => ['nullable', 'string', 'max:20'],
             'product_name' => ['sometimes', 'string', 'max:120'],
             'brand' => ['nullable', 'string', 'max:60'],
             'model' => ['nullable', 'string', 'max:60'],

@@ -12,6 +12,7 @@ class Booking extends Model
     use BranchScoped;
 
     public const STATUSES = ['pending', 'confirmed', 'scheduled', 'completed', 'cancelled'];
+    public const PRIORITIES = ['high', 'medium', 'low'];
 
     protected $casts = ['form_data' => 'array', 'scheduled_date' => 'date', 'cancelled_at' => 'datetime', 'quoted_amount' => 'decimal:2'];
 

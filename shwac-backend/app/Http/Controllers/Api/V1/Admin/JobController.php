@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1\Admin;
 
+use App\Http\Controllers\Api\V1\Concerns\FiltersCalls;
 use App\Http\Controllers\Controller;
 use App\Models\ServiceJob;
 use App\Models\User;
@@ -12,10 +13,12 @@ use Illuminate\Validation\Rule;
 
 class JobController extends Controller
 {
+    use FiltersCalls;
+
     public function index(Request $request): JsonResponse
     {
         $q = ServiceJob::query()->visibleTo($request->user())
-            ->with(['customer:id,name,phone', 'address:id,line1,city,pincode,lat,lng', 'technician:id,name,phone', 'service:id,name']);
+            ->with(['customer:id,name,phone', 'address:id,line1,city,pincode,lat,lng', 'technician:id,name,phone', 'service:id,name', 'booking:id,number,priority']);
 
         foreach (['status', 'branch_id', 'technician_id', 'type'] as $f) {
             if ($request->filled($f)) {
@@ -30,6 +33,11 @@ class JobController extends Controller
         }
         if ($request->filled('date')) {
             $q->whereDate('scheduled_date', $request->date('date'));
+        }
+        // service / category / priority / dates / place / the booking's service answers
+        $this->applyCallFilters($q, $request, viaBooking: true);
+        if ($s = $request->string('q')->trim()->value()) {
+            $q->where(fn ($w) => $w->where('number', $s)->orWhereHas('customer', fn ($c) => $c->where('phone', 'like', "%{$s}%")->orWhere('name', 'like', "%{$s}%")));
         }
 
         return response()->json($q->orderBy('scheduled_date')->latest('id')->paginate($this->perPage($request)));

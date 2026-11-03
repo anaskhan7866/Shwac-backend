@@ -4,6 +4,7 @@ namespace App\Services\Operations;
 
 use App\Models\Booking;
 use App\Models\Customer;
+use App\Models\CustomerProduct;
 use App\Models\Service;
 use App\Models\User;
 use App\Services\Messaging\Notifier;
@@ -41,18 +42,25 @@ class BookingService
         $formData = $this->validateDynamicForm($service, $data['form_data'] ?? []);
 
         $booking = DB::transaction(function () use ($customer, $service, $data, $by, $address, $formData) {
+            // Alt mobile / WhatsApp given on the call form is kept on the customer.
+            if (! empty($data['whatsapp']) && $data['whatsapp'] !== $customer->whatsapp) {
+                $customer->update(['whatsapp' => $data['whatsapp']]);
+            }
+            $product = $this->rememberProduct($customer, $service, $formData, empty($data['customer_product_id']) ? null : (int) $data['customer_product_id'], $address->id);
             $booking = Booking::create([
                 'number' => $this->numbers->for('booking'),
                 'branch_id' => $customer->branch_id,
                 'customer_id' => $customer->id,
                 'customer_address_id' => $address->id,
                 'service_id' => $service->id,
-                'customer_product_id' => $data['customer_product_id'] ?? null,
+                'customer_product_id' => $product?->id ?? ($data['customer_product_id'] ?? null),
                 'scheduled_date' => $data['scheduled_date'],
                 'time_slot' => $data['time_slot'] ?? null,
                 'source' => $data['source'] ?? 'web',
                 'form_data' => $formData,
-                'quoted_amount' => $service->base_price,
+                'priority' => $data['priority'] ?? 'medium',
+                // Office can set the charge for this call; otherwise the service's price.
+                'quoted_amount' => $data['quoted_amount'] ?? $service->base_price,
                 'notes' => $data['notes'] ?? null,
                 'status' => 'pending',
                 'created_by' => $by?->id,
@@ -70,6 +78,54 @@ class BookingService
         ], $booking);
 
         return $booking->setAttribute('whatsapp', $log?->share());
+    }
+
+    /** Answers that describe this call, not the appliance; they stay on the booking only. */
+    private const CALL_KEYS = ['service_type', 'defect_code', 'solar_service_type', 'job_type'];
+
+    /**
+     * Save the appliance details from this booking on the customer's appliance record,
+     * so the next call for it is pre-filled. Uses the picked appliance, else the one for
+     * this service (same serial if given), else creates one. Empty answers never wipe saved ones.
+     */
+    private function rememberProduct(Customer $customer, Service $service, array $formData, ?int $productId, int $addressId): ?CustomerProduct
+    {
+        $details = array_filter(array_diff_key($formData, array_flip(self::CALL_KEYS)), fn ($v) => $v !== null && $v !== '' && $v !== []);
+        $warranty = isset($details['warranty_status']) ? mb_substr((string) $details['warranty_status'], 0, 20) : null;
+        $brand = isset($details['brand']) ? mb_substr((string) $details['brand'], 0, 60) : null;
+        $serial = isset($details['model_serial']) ? mb_substr(trim((string) $details['model_serial']), 0, 60) : null;
+        unset($details['warranty_status']);
+
+        $product = $productId ? $customer->products()->find($productId) : null;
+        if (! $product) {
+            $mine = fn () => $customer->products()->where('service_id', $service->id)->latest('updated_at');
+            $product = $serial
+                ? ($mine()->where('serial_no', $serial)->first() ?? $mine()->whereNull('serial_no')->first())
+                : $mine()->first();
+        }
+        if (! $product && ! $details && ! $warranty) {
+            return null; // nothing to remember yet
+        }
+
+        $attrs = array_filter([
+            'brand' => $brand, 'serial_no' => $serial, 'warranty_status' => $warranty,
+        ], fn ($v) => $v !== null && $v !== '');
+        if ($product) {
+            $product->update($attrs + [
+                'service_id' => $product->service_id ?? $service->id,
+                'details' => array_merge($product->details ?? [], $details),
+            ]);
+
+            return $product;
+        }
+
+        return $customer->products()->create($attrs + [
+            'service_id' => $service->id,
+            'customer_address_id' => $addressId,
+            'category' => $service->category?->name,
+            'product_name' => $service->name,
+            'details' => $details,
+        ]);
     }
 
     public function cancel(Booking $booking, string $reason, ?User $by = null): Booking

@@ -107,7 +107,10 @@ class PortalController extends Controller
             'time_slot' => ['nullable', 'string', 'max:20'],
             'form_data' => ['nullable', 'array'],
             'notes' => ['nullable', 'string', 'max:1000'],
+            'priority' => ['nullable', Rule::in(Booking::PRIORITIES)],
+            'whatsapp' => ['nullable', 'regex:/^[6-9]\d{9}$/'],
         ]);
+        // Customers never set the charge or the technician; the office does.
         $booking = $bookings->create($this->customer($request), Service::findOrFail($data['service_id']), $data + ['source' => 'app'], $request->user());
 
         return response()->json($booking->load('service:id,name'), 201);

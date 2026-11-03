@@ -99,6 +99,8 @@ textarea.in { min-height: 90px; resize: vertical; line-height: 1.5; }
 .check { display: flex; gap: 8px; align-items: center; font-weight: 600; color: var(--ink); font-size: 14px; }
 .err { color: var(--bad); font-size: 13px; font-weight: 600; }
 .search { width: 260px; max-width: 100%; }
+details.filters > summary { cursor: pointer; font-weight: 800; list-style: revert; display: flex; align-items: center; gap: 8px; }
+details.filters:not([open]) { padding-top: 12px; padding-bottom: 12px; }
 
 /* Picker dropdown */
 .picker { position: relative; }

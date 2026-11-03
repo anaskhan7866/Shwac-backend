@@ -18,7 +18,8 @@ use Illuminate\Validation\ValidationException;
  */
 trait ResolvesInvoiceLines
 {
-    protected function validatedLines(Request $request, bool $allowPriceOverride = true): array
+    /** @param array<int, string|float> $servicePrices  service_id => agreed price for this call (used when no override) */
+    protected function validatedLines(Request $request, bool $allowPriceOverride = true, array $servicePrices = []): array
     {
         $request->validate([
             'items' => ['required', 'array', 'min:1', 'max:50'],
@@ -38,7 +39,7 @@ trait ResolvesInvoiceLines
         $services = Service::whereIn('id', $items->pluck('service_id')->filter())->get()->keyBy('id');
         $products = Product::whereIn('id', $items->pluck('product_id')->filter())->get()->keyBy('id');
 
-        return $items->map(function (array $l, int $i) use ($services, $products, $allowPriceOverride) {
+        return $items->map(function (array $l, int $i) use ($services, $products, $allowPriceOverride, $servicePrices) {
             $price = fn ($catalog) => $allowPriceOverride && isset($l['unit_price']) ? $l['unit_price'] : $catalog;
 
             if (! empty($l['service_id'])) {
@@ -51,7 +52,7 @@ trait ResolvesInvoiceLines
                     'hsn_sac' => $s->sac_code,
                     'quantity' => $l['quantity'],
                     'unit' => $l['unit'] ?? 'NOS',
-                    'unit_price' => $price($s->base_price),
+                    'unit_price' => $price($servicePrices[$s->id] ?? $s->base_price),
                     'discount' => $l['discount'] ?? 0,
                     'tax_rate' => $s->tax_rate,
                 ];
