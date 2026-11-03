@@ -108,6 +108,25 @@ class ApplianceMemoryTest extends TestCase
     }
 
     #[Test]
+    public function a_product_added_in_the_app_is_linked_to_the_catalog_and_used_when_booking(): void
+    {
+        $this->actingAsUser($this->customerUser($this->cust));
+
+        $this->postJson('/api/v1/customer/products', [
+            'service_id' => $this->ac->id, 'product_name' => 'Bedroom AC', 'brand' => 'Voltas', 'serial_no' => 'VOL-9', 'warranty_status' => 'AMC',
+        ])->assertCreated()->assertJsonPath('category', 'Home Appliances')->assertJsonPath('service_id', $this->ac->id);
+        $this->postJson('/api/v1/customer/products', ['service_id' => $this->ac->id, 'product_name' => 'X', 'warranty_status' => 'Lifetime'])->assertStatus(422);
+
+        $id = $this->postJson('/api/v1/customer/bookings', ['service_id' => $this->ac->id, 'scheduled_date' => today()->toDateString(), 'form_data' => [
+            'service_type' => 'Repair', 'warranty_status' => 'AMC', 'defect_code' => 'Noise',
+        ]])->assertCreated()->json('id');
+
+        $p = CustomerProduct::sole();
+        $this->assertSame('Bedroom AC', $p->product_name);
+        $this->assertSame($p->id, (int) Booking::findOrFail($id)->customer_product_id);
+    }
+
+    #[Test]
     public function another_customers_appliance_cannot_be_used(): void
     {
         $other = $this->customer();

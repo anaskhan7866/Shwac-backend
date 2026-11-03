@@ -17,6 +17,16 @@ trait FiltersCalls
     /** @param bool $viaBooking true for service jobs (answers and priority live on the booking) */
     protected function applyCallFilters(Builder $q, Request $request, bool $viaBooking = false): void
     {
+        // A bad value in a hand-typed link gets a clear 422, never a server error.
+        $request->validate([
+            'from' => ['nullable', 'date'],
+            'to' => ['nullable', 'date'],
+            'category_id' => ['nullable', 'integer'],
+            'technician_id' => ['nullable', 'integer'],
+            'service_id' => ['nullable'],
+            'service_id.*' => ['integer'],
+            'place' => ['nullable', 'string', 'max:80'],
+        ]);
         if ($request->filled('category_id')) {
             $q->whereHas('service', fn ($s) => $s->where('service_category_id', $request->integer('category_id')));
         }
@@ -29,10 +39,16 @@ trait FiltersCalls
         if ($request->filled('to')) {
             $q->whereDate('scheduled_date', '<=', $request->date('to'));
         }
-        if ($place = trim((string) $request->input('place', ''))) {
-            $q->whereHas('address', fn ($a) => preg_match('/^\d{6}$/', $place)
-                ? $a->where('pincode', $place)
-                : $a->where('city', 'like', '%'.$place.'%'));
+        if (trim((string) $request->input('place', '')) !== '') {
+            // % and _ are LIKE wildcards: typed by a user they must not mean "match anything".
+            $place = trim(str_replace(['%', '_'], '', (string) $request->input('place')));
+            if ($place === '') {
+                $q->whereRaw('1 = 0');
+            } else {
+                $q->whereHas('address', fn ($a) => preg_match('/^\d{6}$/', $place)
+                    ? $a->where('pincode', $place)
+                    : $a->where('city', 'like', '%'.$place.'%'));
+            }
         }
         if ($request->filled('technician_id')) {
             $tech = $request->integer('technician_id');

@@ -76,13 +76,19 @@ class PortalController extends Controller
         $c = $this->customer($request);
         $data = $request->validate([
             'customer_address_id' => ['nullable', Rule::exists('customer_addresses', 'id')->where('customer_id', $c->id)],
+            // V2: which catalog product this is (AC, RO, Solar Water Heater...), picked from the live catalog.
+            'service_id' => ['nullable', Rule::exists('services', 'id')->where('is_active', true)],
             'category' => ['nullable', 'string', 'max:60'],
             'product_name' => ['required', 'string', 'max:120'],
             'brand' => ['nullable', 'string', 'max:60'],
             'model' => ['nullable', 'string', 'max:60'],
             'serial_no' => ['nullable', 'string', 'max:60'],
             'purchase_date' => ['nullable', 'date', 'before_or_equal:today'],
+            'warranty_status' => ['nullable', Rule::in(['In-Warranty', 'Out of Warranty', 'AMC'])],
         ]);
+        if (! empty($data['service_id']) && empty($data['category'])) {
+            $data['category'] = \App\Models\Service::find($data['service_id'])?->category?->name;
+        }
 
         return response()->json($c->products()->create($data), 201);
     }

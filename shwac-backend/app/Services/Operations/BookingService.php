@@ -35,8 +35,15 @@ class BookingService
         if (! $address) {
             throw ValidationException::withMessages(['customer_address_id' => 'Add an address before booking.']);
         }
-        if (! empty($data['customer_product_id']) && ! $customer->products()->whereKey($data['customer_product_id'])->exists()) {
-            throw ValidationException::withMessages(['customer_product_id' => 'Product does not belong to this customer.']);
+        if (! empty($data['customer_product_id'])) {
+            $picked = $customer->products()->whereKey($data['customer_product_id'])->first();
+            if (! $picked) {
+                throw ValidationException::withMessages(['customer_product_id' => 'Product does not belong to this customer.']);
+            }
+            // An RO must not receive AC answers: a linked appliance only takes calls for its own service.
+            if ($picked->service_id && (int) $picked->service_id !== (int) $service->id) {
+                throw ValidationException::withMessages(['customer_product_id' => "This appliance is a {$picked->product_name}; pick the matching service or 'New / not listed'."]);
+            }
         }
 
         $formData = $this->validateDynamicForm($service, $data['form_data'] ?? []);

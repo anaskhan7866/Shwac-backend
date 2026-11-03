@@ -31,6 +31,7 @@ class JobController extends Controller
         if ($request->boolean('unassigned')) {
             $q->whereNull('technician_id')->where('status', 'pending');
         }
+        $request->validate(['date' => ['nullable', 'date']]);
         if ($request->filled('date')) {
             $q->whereDate('scheduled_date', $request->date('date'));
         }
