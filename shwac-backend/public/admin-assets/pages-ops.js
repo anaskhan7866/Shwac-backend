@@ -19,12 +19,20 @@
     const o = { priority: q.priority, technician_id: q.tech, from: q.from, to: q.to, place: q.place };
     if (q.svc && q.svc[0] === 'c') o.category_id = q.svc.slice(1); else if (q.svc && q.svc[0] === 's') o.service_id = q.svc.slice(1);
     Object.keys(q).filter((k) => k.startsWith('f_') && q[k]).forEach((k) => { o['form[' + k.slice(2) + ']'] = q[k]; });
+    // Number answers (TDS, tank capacity, panel count…) filter by a range.
+    Object.keys(q).filter((k) => k.startsWith('fmin_') && q[k] !== '').forEach((k) => { o['form_min[' + k.slice(5) + ']'] = q[k]; });
+    Object.keys(q).filter((k) => k.startsWith('fmax_') && q[k] !== '').forEach((k) => { o['form_max[' + k.slice(5) + ']'] = q[k]; });
     return o;
   };
-  const callFilterKeys = (q) => ['svc', 'priority', 'tech', 'from', 'to', 'place', ...Object.keys(q).filter((k) => k.startsWith('f_'))];
+  const isFieldKey = (k) => k.startsWith('f_') || k.startsWith('fmin_') || k.startsWith('fmax_');
+  const callFilterKeys = (q) => ['svc', 'priority', 'tech', 'from', 'to', 'place', ...Object.keys(q).filter(isFieldKey)];
   const callFilterHtml = (q, cats, svcs, techs) => {
     const sel = q.svc && q.svc[0] === 's' ? svcs.find((s) => String(s.id) === q.svc.slice(1)) : null;
-    const fields = sel ? (sel.form_schema || []).filter((f) => f.type === 'select' && (f.options || []).length) : [];
+    // Dropdown answers (single or multi-choice) and number answers become filters.
+    const fields = sel ? (sel.form_schema || []).filter((f) => (['select', 'multiselect'].includes(f.type) && (f.options || []).length) || f.type === 'number') : [];
+    const fieldFilter = (f) => f.type === 'number'
+      ? `<div class="f" style="display:flex;flex-direction:column;gap:5px;font-size:12px;font-weight:700;color:var(--muted)">${esc(f.label)}<div class="row" style="flex-wrap:nowrap;gap:6px"><input class="in" type="number" step="any" name="fmin_${esc(f.key)}" value="${esc(q['fmin_' + f.key] || '')}" placeholder="From"><input class="in" type="number" step="any" name="fmax_${esc(f.key)}" value="${esc(q['fmax_' + f.key] || '')}" placeholder="To"></div></div>`
+      : `<label class="f">${esc(f.label)}${f.type === 'multiselect' ? ' (includes)' : ''}<select class="in" name="f_${esc(f.key)}"><option value="">Any</option>${f.options.map((o) => opt(o, o, q['f_' + f.key])).join('')}</select></label>`;
     const active = callFilterKeys(q).filter((k) => q[k]).length;
     return `<details class="card filters" ${active ? 'open' : ''}><summary>Filters${active ? ` <span class="pill teal">${active} on</span>` : ''}</summary>
       <form data-submit="applyFilters" style="display:flex;flex-direction:column;gap:12px"><div class="form">
@@ -34,14 +42,14 @@
         <label class="f">Visit from<input class="in" type="date" name="from" value="${esc(q.from || '')}"></label>
         <label class="f">Visit to<input class="in" type="date" name="to" value="${esc(q.to || '')}"></label>
         <label class="f">City or pincode<input class="in" name="place" value="${esc(q.place || '')}" placeholder="e.g. Meerut or 250001"></label>
-        ${fields.map((f) => `<label class="f">${esc(f.label)}<select class="in" name="f_${esc(f.key)}"><option value="">Any</option>${f.options.map((o) => opt(o, o, q['f_' + f.key])).join('')}</select></label>`).join('')}
-      </div>${sel ? '' : '<div class="small muted">Pick one service to also filter by its own fields (service type, warranty, tonnage…).</div>'}
+        ${fields.map(fieldFilter).join('')}
+      </div>${sel ? '' : '<div class="small muted">Pick one service to also filter by its own fields (service type, warranty, tonnage, TDS…).</div>'}
       <div class="row" style="justify-content:flex-end"><button type="button" class="btn ghost" data-act="clearFilters">Clear</button><button class="btn primary" type="submit">Apply filters</button></div></form></details>`;
   };
   const callFilterActions = (q) => ({
     applyFilters: (f) => { const b = SH.formData(f); const patch = { page: '' }; callFilterKeys(q).forEach((k) => { patch[k] = ''; }); Object.keys(b).forEach((k) => { patch[k] = b[k]; }); SH.setQuery(patch); },
     // Changing the service shows its own fields: clear the old ones and re-render.
-    filterSvc: (el) => { const patch = { svc: el.value, page: '' }; Object.keys(q).filter((k) => k.startsWith('f_')).forEach((k) => { patch[k] = ''; }); SH.setQuery(patch); },
+    filterSvc: (el) => { const patch = { svc: el.value, page: '' }; Object.keys(q).filter(isFieldKey).forEach((k) => { patch[k] = ''; }); SH.setQuery(patch); },
     clearFilters: () => { const patch = { page: '' }; callFilterKeys(q).forEach((k) => { patch[k] = ''; }); SH.setQuery(patch); },
   });
 
@@ -247,6 +255,7 @@
     const svcs = allSvcs.filter((s) => s.is_active !== false);
     let pre = null; if (q.customer) { try { pre = await SH.get('/admin/customers/' + q.customer); } catch (e) { pre = null; } }
     let cust = null; // the picked customer, with their appliances
+    let newCust = false; // true while the "New customer" fields are used instead of the search
     // Fill the service questions from an appliance's saved details (V2 step 4).
     const prefill = (prod) => {
       if (!prod) return;
@@ -261,9 +270,20 @@
       html: `${head('New booking', 'Book a visit for a customer who called, messaged or walked in.', '', '<a href="#/bookings">Bookings</a> / New')}
         <form data-submit="save" class="card"><div class="form">
           <div class="full">${SH.customerPicker('customer_id', 'Customer', pre, 'customerPicked')}</div>
-          <div class="full muted small">New customer? <a href="#/customers/new">Add the customer first</a>.</div>
-          <label class="f">Visit address<select class="in" name="customer_address_id" data-addr><option value="">Default address</option></select></label>
-          <label class="f">Appliance<select class="in" name="customer_product_id" data-prod data-change="prodPicked"><option value="">New / not listed</option></select></label>
+          <div class="full muted small" data-newcust-link>Not found? <a href="#" data-act="toggleNewCust"><b>+ New customer</b>: enter their details here</a></div>
+          <div class="full form" data-newcust hidden style="background:#F8FBFA;border:1px solid var(--line);border-radius:12px;padding:12px">
+            <div class="full row between"><b>New customer</b><a href="#" data-act="toggleNewCust">Search existing instead</a></div>
+            <label class="f">Customer name *<input class="in" name="new_customer.name" maxlength="120" data-nc></label>
+            <label class="f">Primary mobile *<input class="in" type="tel" name="new_customer.phone" pattern="[6-9]\\d{9}" maxlength="10" placeholder="10-digit number" data-nc></label>
+            ${SH.allBranches() ? `<label class="f">Branch *<select class="in" name="new_customer.branch_id" data-nc data-ncbranch data-change="ncBranch"><option value="">Choose branch</option>${(SH.state.branches || []).map((x) => opt(x.id, x.name, SH.state.branch)).join('')}</select></label>` : ''}
+            <label class="f full">Address / House no *<input class="in" name="new_customer.address.line1" maxlength="255" placeholder="e.g. B-402, Green Villa" data-nc></label>
+            <label class="f">Landmark<input class="in" name="new_customer.address.landmark" maxlength="120" placeholder="e.g. Near City Mall"></label>
+            <label class="f">City *<input class="in" name="new_customer.address.city" maxlength="80" data-nc></label>
+            <label class="f">State *<select class="in" name="new_customer.address.state_code" data-nc><option value="">Choose state</option>${SH.states.map(([c, n]) => opt(c, n)).join('')}</select></label>
+            <label class="f">Pincode *<input class="in" name="new_customer.address.pincode" pattern="\\d{6}" maxlength="6" inputmode="numeric" data-nc></label>
+          </div>
+          <label class="f" data-existing>Visit address<select class="in" name="customer_address_id" data-addr><option value="">Default address</option></select></label>
+          <label class="f" data-existing>Appliance<select class="in" name="customer_product_id" data-prod data-change="prodPicked"><option value="">New / not listed</option></select></label>
           <label class="f full">Service<select class="in" name="service_id" required data-change="svc"><option value="">Choose service</option>${svcs.map((s) => opt(s.id, `${s.name} · ${money(s.base_price)} + GST`)).join('')}</select></label>
           <div class="full form" data-fields></div>
           <label class="f">Visit date *<input class="in" type="date" name="scheduled_date" min="${SH.today()}" value="${SH.today()}" required></label>
@@ -305,8 +325,37 @@
           }
           prefill(prod);
         },
+        // V2: a caller who is not a customer yet is added right here, with their address.
+        toggleNewCust: (el, ev) => {
+          if (ev) ev.preventDefault();
+          newCust = !newCust;
+          const box = document.querySelector('[data-newcust]'); box.hidden = !newCust;
+          document.querySelector('[data-newcust-link]').hidden = newCust;
+          document.querySelector('.picker').closest('.full').hidden = newCust;
+          document.querySelectorAll('[data-existing]').forEach((x) => { x.hidden = newCust; });
+          box.querySelectorAll('[data-nc]').forEach((x) => { x.required = newCust; });
+          if (newCust) {
+            cust = null;
+            const typed = (document.querySelector('.picker input.in') || {}).value || '';
+            const phone = box.querySelector('[name="new_customer.phone"]'); if (/^[6-9]\d{9}$/.test(typed.trim()) && !phone.value) phone.value = typed.trim();
+            v.actions.ncBranch();
+          }
+        },
+        ncBranch: () => {
+          const sel = document.querySelector('[data-ncbranch]'); const tech = document.querySelector('[data-tech]');
+          if (tech) tech.innerHTML = techOptions(techs, null, sel ? sel.value : (SH.state.user.branch && SH.state.user.branch.id)).replace('Choose technician', 'Assign later');
+        },
         save: async (f) => {
-          const b = SH.formData(f); if (!b.customer_id) { SH.toast('Choose the customer first.', true); return; }
+          const b = SH.formData(f);
+          if (newCust) {
+            const a = b.new_customer.address; const st = SH.states.find(([c]) => c === a.state_code);
+            a.state = st ? st[1] : ''; if (!a.landmark) delete a.landmark;
+            if (!b.new_customer.branch_id) delete b.new_customer.branch_id; else b.new_customer.branch_id = Number(b.new_customer.branch_id);
+            ['customer_id', 'customer_address_id', 'customer_product_id'].forEach((k) => { delete b[k]; });
+          } else {
+            delete b.new_customer;
+            if (!b.customer_id) { SH.toast('Choose the customer first, or add a new customer.', true); return; }
+          }
           ['customer_address_id', 'customer_product_id', 'notes', 'time_slot', 'technician_id', 'whatsapp', 'quoted_amount'].forEach((k) => { if (b[k] === '' || b[k] === null || Number.isNaN(b[k])) delete b[k]; });
           if (b.technician_id) b.technician_id = Number(b.technician_id);
           const r = await SH.post('/admin/bookings', b); SH.toast(r.number + ' booked.'); SH.goThen('/bookings/' + r.id, () => SH.shareFrom(r, 'Send the booking confirmation?'));

@@ -31,7 +31,7 @@ button { cursor: pointer; }
 .me { margin-top: auto; display: flex; align-items: center; gap: 10px; padding: 12px 8px 0; border-top: 1px solid #23464D; }
 .avatar { width: 36px; height: 36px; border-radius: 999px; background: #1C4249; color: #7FD3DC; display: flex; align-items: center; justify-content: center; font-weight: 800; flex: none; }
 .me .who { flex: 1; min-width: 0; } .me .who b { color: #fff; display: block; } .me .who span { font-size: 12px; color: #A9BDBF; }
-.me .who b, .me .who span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.me .who b, .me .who span { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .me .linkbtn { flex: none; }
 .linkbtn { background: none; border: 0; color: #7FD3DC; font-weight: 700; padding: 6px; }
 .main { flex: 999 1 560px; min-width: 0; padding: 24px 28px 48px; }

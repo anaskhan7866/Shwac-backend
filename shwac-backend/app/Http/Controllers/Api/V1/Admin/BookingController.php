@@ -40,8 +40,19 @@ class BookingController extends Controller
 
     public function store(Request $request, BookingService $bookings, JobService $jobs): JsonResponse
     {
-        $data = $request->validate([
-            'customer_id' => ['required', 'exists:customers,id'],
+        // V2 "Add Call": a caller who is not a customer yet is created on the same form.
+        $isNew = ! $request->filled('customer_id') && $request->has('new_customer');
+        $newRules = ! $isNew ? [] : [
+            'new_customer' => ['required', 'array'],
+            'new_customer.name' => ['required', 'string', 'max:120'],
+            'new_customer.phone' => ['required', 'regex:/^[6-9]\d{9}$/', Rule::unique('customers', 'phone')],
+            'new_customer.email' => ['nullable', 'email', 'max:120'],
+            'new_customer.branch_id' => ['nullable', 'integer', 'exists:branches,id'],
+            'new_customer.address' => ['required', 'array'],
+            ...CustomerController::addressRules('new_customer.address.'),
+        ];
+        $data = $request->validate($newRules + [
+            'customer_id' => [$isNew ? 'nullable' : 'required', 'exists:customers,id'],
             'service_id' => ['required', 'exists:services,id'],
             'customer_address_id' => ['nullable', 'integer'],
             'customer_product_id' => ['nullable', 'integer'],
@@ -54,19 +65,36 @@ class BookingController extends Controller
             'quoted_amount' => ['nullable', 'numeric', 'min:0', 'max:9999999'],
             'whatsapp' => ['nullable', 'regex:/^[6-9]\d{9}$/'],
             'technician_id' => ['nullable', 'integer', 'exists:users,id'],
-        ]);
-        $customer = Customer::findOrFail($data['customer_id']);
-        $this->ensureVisible($customer, $request->user());
+        ], ['new_customer.phone.unique' => 'A customer with this mobile already exists. Search and pick them instead.']);
+        $user = $request->user();
+
+        if ($isNew) {
+            abort_unless($user->hasPermission('customers.manage'), 403, 'You cannot add customers.');
+            $branchId = $user->canSeeAllBranches() ? ($data['new_customer']['branch_id'] ?? $user->branch_id) : $user->branch_id;
+            abort_unless($branchId, 422, 'Choose the branch for the new customer.');
+            $customer = null;
+        } else {
+            $customer = Customer::findOrFail($data['customer_id']);
+            $this->ensureVisible($customer, $user);
+            $branchId = $customer->branch_id;
+        }
 
         // Optional technician: checked before anything is saved so a bad pick leaves no half-made booking.
         $tech = isset($data['technician_id']) ? User::findOrFail($data['technician_id']) : null;
         if ($tech) {
-            abort_unless($request->user()->hasPermission('jobs.manage'), 403, 'You cannot assign technicians.');
+            abort_unless($user->hasPermission('jobs.manage'), 403, 'You cannot assign technicians.');
             abort_unless($tech->isTechnician() && $tech->is_active && ! $tech->removed_at, 422, 'Selected user is not an active technician.');
-            abort_unless((int) $tech->branch_id === (int) $customer->branch_id, 422, 'This technician belongs to another branch.');
+            abort_unless((int) $tech->branch_id === (int) $branchId, 422, 'This technician belongs to another branch.');
         }
 
-        $booking = DB::transaction(function () use ($bookings, $customer, $data, $request, $jobs, $tech) {
+        // Customer (if new), booking, job and assignment are saved together or not at all.
+        $booking = DB::transaction(function () use ($bookings, $customer, $data, $request, $jobs, $tech, $isNew, $branchId) {
+            if ($isNew) {
+                $nc = $data['new_customer'];
+                $customer = app(\App\Services\CustomerService::class)->create(array_filter([
+                    'name' => $nc['name'], 'phone' => $nc['phone'], 'email' => $nc['email'] ?? null, 'whatsapp' => $data['whatsapp'] ?? null,
+                ], fn ($v) => $v !== null) + ['address' => $nc['address']], (int) $branchId);
+            }
             $booking = $bookings->create($customer, Service::findOrFail($data['service_id']), $data + ['source' => $data['source'] ?? 'admin'], $request->user());
             if ($tech && ($job = $booking->jobs()->first())) {
                 $jobs->assign($job, $tech, $request->user());

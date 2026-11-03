@@ -40,16 +40,7 @@ class CustomerController extends Controller
         $branchId = $user->canSeeAllBranches() ? ($data['branch_id'] ?? $user->branch_id) : $user->branch_id;
         abort_unless($branchId, 422, 'branch_id is required.');
 
-        $customer = DB::transaction(function () use ($data, $branchId, $numbers) {
-            $c = Customer::create(collect($data)->except(['address', 'branch_id'])->all() + [
-                'code' => $numbers->for('customer'),
-                'branch_id' => $branchId,
-                'whatsapp' => $data['whatsapp'] ?? $data['phone'],
-            ]);
-            $c->addresses()->create($data['address'] + ['is_default' => true]);
-
-            return $c;
-        });
+        $customer = app(\App\Services\CustomerService::class)->create($data, $branchId);
 
         return response()->json($customer->load('addresses'), 201);
     }

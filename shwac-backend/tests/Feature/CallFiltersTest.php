@@ -40,7 +40,8 @@ class CallFiltersTest extends TestCase
             'service_type' => 'Repair', 'warranty_status' => 'Out of Warranty', 'defect_code' => 'Noise', 'tonnage' => '2 Ton',
         ]])->id;
         $this->ids['swh'] = $bookings->create($meerut, $swh, ['scheduled_date' => '2026-12-05', 'form_data' => [
-            'solar_service_type' => 'Acid Wash / Descaling', 'system_capacity' => '200 LPD',
+            // System Type (tube/plate) is mandatory for the water heater per the client spec.
+            'solar_service_type' => 'Acid Wash / Descaling', 'system_capacity' => '200 LPD', 'system_type' => 'ETC (Glass Tube)',
         ]])->id;
 
         $this->tech = $this->technician();

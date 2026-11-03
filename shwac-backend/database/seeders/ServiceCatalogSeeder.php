@@ -177,12 +177,13 @@ class ServiceCatalogSeeder extends Seeder
     }
 
     /** Section 3 fields shared by every solar product, in spec order. */
-    private function solarBase(array $serviceTypes, array $capacities, array $systemTypes): array
+    /** $systemTypeRequired: the spec's table makes System Type (PV) and Tube/Plate type (water heater) mandatory. */
+    private function solarBase(array $serviceTypes, array $capacities, array $systemTypes, bool $systemTypeRequired = false): array
     {
         return [
             $this->select('solar_service_type', 'Solar Service Type', $serviceTypes, true),
             $this->select('system_capacity', 'System Capacity', $capacities, true),
-            $this->select('system_type', 'System Type', $systemTypes),
+            $this->select('system_type', 'System Type', $systemTypes, $systemTypeRequired),
             $this->select('installation', 'Installation', ['Rooftop', 'Ground Mounted']),
         ];
     }
@@ -194,6 +195,7 @@ class ServiceCatalogSeeder extends Seeder
                 ['Installation', 'Panel Cleaning', 'Acid Wash', 'Breakdown', 'General Service'],
                 ['1 KW', '2 KW', '3 KW', '5 KW', '7.5 KW', '10 KW', 'More than 10 KW'],
                 ['On-Grid', 'Off-Grid', 'Hybrid'],
+                true,
             ),
             $this->text('inverter_battery', 'Inverter & Battery Detail'),
             $this->select('structure', 'Structure / Tilt Type', ['Elevated High Structure', 'Standard']),
@@ -212,6 +214,7 @@ class ServiceCatalogSeeder extends Seeder
                 ['Installation', 'General Service', 'Acid Wash / Descaling', 'Breakdown'],
                 ['100 LPD', '150 LPD', '200 LPD', '250 LPD', '300 LPD', '500 LPD'],
                 ['ETC (Glass Tube)', 'FPC (Copper Plate)'],
+                true,
             ),
             $this->select('structure', 'Structure / Tilt Type', ['Elevated High Structure', 'Standard']),
             $this->select('hard_water', 'Hard Water Treatment / Scaling Issue', ['Yes', 'No', 'Not sure']),
