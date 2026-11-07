@@ -54,28 +54,6 @@ class WhatsAppClient
         ]);
     }
 
-    /** Free-form text — only allowed inside the 24h customer service window. */
-    public function sendText(string $to, string $body): string
-    {
-        return $this->post([
-            'messaging_product' => 'whatsapp',
-            'to' => $to,
-            'type' => 'text',
-            'text' => ['body' => $body, 'preview_url' => true],
-        ]);
-    }
-
-    /** Send a document (e.g. invoice PDF) by public URL. */
-    public function sendDocument(string $to, string $url, string $filename, ?string $caption = null): string
-    {
-        return $this->post([
-            'messaging_product' => 'whatsapp',
-            'to' => $to,
-            'type' => 'document',
-            'document' => array_filter(['link' => $url, 'filename' => $filename, 'caption' => $caption]),
-        ]);
-    }
-
     /** Verify X-Hub-Signature-256 on incoming webhooks. */
     public function verifySignature(string $rawBody, ?string $header): bool
     {

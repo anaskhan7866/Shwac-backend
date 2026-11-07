@@ -41,10 +41,4 @@ class Setting extends Model
     {
         static::query()->updateOrCreate(['key' => $key], ['value' => $value]);
         Cache::forget(self::CACHE_KEY);
-    }
-
-    public static function flushCache(): void
-    {
-        Cache::forget(self::CACHE_KEY);
-    }
-}
+    }}

@@ -12,10 +12,4 @@ class CustomerProduct extends Model
 
     public function customer() { return $this->belongsTo(Customer::class); }
     public function service() { return $this->belongsTo(Service::class); }
-    public function address() { return $this->belongsTo(CustomerAddress::class, 'customer_address_id'); }
-
-    public function underWarranty(): bool
-    {
-        return $this->warranty_until !== null && $this->warranty_until->endOfDay()->isFuture();
-    }
-}
+    public function address() { return $this->belongsTo(CustomerAddress::class, 'customer_address_id'); }}

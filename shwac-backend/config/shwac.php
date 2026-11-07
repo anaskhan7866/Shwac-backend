@@ -54,11 +54,6 @@ return [
         'customer' => ['Customer', []],
     ],
 
-    'gst' => [
-        'default_service_sac' => '998719',
-        'default_rate' => 18,
-    ],
-
     'otp' => [
         'ttl_minutes' => 5,
         'max_attempts' => 5,

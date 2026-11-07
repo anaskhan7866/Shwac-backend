@@ -7,3 +7,7 @@ shwac-mock-api/
 .claude/skills/
 .agents/
 skills-lock.json
+
+# Signing keys must never be committed
+*.jks
+*.keystore

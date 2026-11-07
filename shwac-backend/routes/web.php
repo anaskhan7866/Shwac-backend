@@ -3,9 +3,7 @@
 use App\Http\Controllers\PublicInvoiceController;
 use Illuminate\Support\Facades\Route;
 
-Route::get('/', function () {
-    return view('welcome');
-});
+Route::redirect('/', '/admin');
 
 // Public invoice link sent on WhatsApp (no login): GST invoice + free UPI payment.
 Route::get('/i/{token}', [PublicInvoiceController::class, 'show']);
