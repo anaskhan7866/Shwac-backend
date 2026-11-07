@@ -13,7 +13,8 @@
     if (m === null || m === undefined) return '<span class="pill">—</span>';
     return `<span class="pill ${m < 120 ? 'warn' : 'ok'}">${SH.mins(m)} left</span>`;
   };
-  // ---- V2 call filters (Bookings + Service jobs). URL keys: svc (c<catId>|s<svcId>), priority, tech, from, to, place, f_<field>.
+  // ---- V2 call filters (Bookings + Service jobs). URL keys: svc (c<catId>|s<svcId>), priority, tech, from, to, place,
+  //      f_<field> (dropdown), fmin_/fmax_<field> (number range), t_<field> (text contains).
   const callFilterData = () => Promise.all([SH.get('/admin/catalog/categories'), SH.get('/admin/catalog/services'), SH.can('jobs.view') ? SH.techs() : []]);
   const callFilterParams = (q) => {
     const o = { priority: q.priority, technician_id: q.tech, from: q.from, to: q.to, place: q.place };
@@ -22,17 +23,21 @@
     // Number answers (TDS, tank capacity, panel count…) filter by a range.
     Object.keys(q).filter((k) => k.startsWith('fmin_') && q[k] !== '').forEach((k) => { o['form_min[' + k.slice(5) + ']'] = q[k]; });
     Object.keys(q).filter((k) => k.startsWith('fmax_') && q[k] !== '').forEach((k) => { o['form_max[' + k.slice(5) + ']'] = q[k]; });
+    // Free-text answers (Model & Serial, Inverter Brand / Serial…) filter by "contains".
+    Object.keys(q).filter((k) => k.startsWith('t_') && String(q[k]).trim() !== '').forEach((k) => { o['form_text[' + k.slice(2) + ']'] = String(q[k]).trim(); });
     return o;
   };
-  const isFieldKey = (k) => k.startsWith('f_') || k.startsWith('fmin_') || k.startsWith('fmax_');
+  const isFieldKey = (k) => k.startsWith('f_') || k.startsWith('fmin_') || k.startsWith('fmax_') || k.startsWith('t_');
   const callFilterKeys = (q) => ['svc', 'priority', 'tech', 'from', 'to', 'place', ...Object.keys(q).filter(isFieldKey)];
   const callFilterHtml = (q, cats, svcs, techs) => {
     const sel = q.svc && q.svc[0] === 's' ? svcs.find((s) => String(s.id) === q.svc.slice(1)) : null;
-    // Dropdown answers (single or multi-choice) and number answers become filters.
-    const fields = sel ? (sel.form_schema || []).filter((f) => (['select', 'multiselect'].includes(f.type) && (f.options || []).length) || f.type === 'number') : [];
-    const fieldFilter = (f) => f.type === 'number'
-      ? `<div class="f" style="display:flex;flex-direction:column;gap:5px;font-size:12px;font-weight:700;color:var(--muted)">${esc(f.label)}<div class="row" style="flex-wrap:nowrap;gap:6px"><input class="in" type="number" step="any" name="fmin_${esc(f.key)}" value="${esc(q['fmin_' + f.key] || '')}" placeholder="From"><input class="in" type="number" step="any" name="fmax_${esc(f.key)}" value="${esc(q['fmax_' + f.key] || '')}" placeholder="To"></div></div>`
-      : `<label class="f">${esc(f.label)}${f.type === 'multiselect' ? ' (includes)' : ''}<select class="in" name="f_${esc(f.key)}"><option value="">Any</option>${f.options.map((o) => opt(o, o, q['f_' + f.key])).join('')}</select></label>`;
+    // Dropdown answers (single or multi-choice), number answers and free-text answers become filters.
+    const fields = sel ? (sel.form_schema || []).filter((f) => (['select', 'multiselect'].includes(f.type) && (f.options || []).length) || ['number', 'text', 'textarea'].includes(f.type)) : [];
+    const fieldFilter = (f) => {
+      if (f.type === 'number') return `<div class="f" style="display:flex;flex-direction:column;gap:5px;font-size:12px;font-weight:700;color:var(--muted)">${esc(f.label)}<div class="row" style="flex-wrap:nowrap;gap:6px"><input class="in" type="number" step="any" name="fmin_${esc(f.key)}" value="${esc(q['fmin_' + f.key] || '')}" placeholder="From"><input class="in" type="number" step="any" name="fmax_${esc(f.key)}" value="${esc(q['fmax_' + f.key] || '')}" placeholder="To"></div></div>`;
+      if (f.type === 'text' || f.type === 'textarea') return `<label class="f">${esc(f.label)}<input class="in" name="t_${esc(f.key)}" value="${esc(q['t_' + f.key] || '')}" maxlength="60" placeholder="Contains… (any part)"></label>`;
+      return `<label class="f">${esc(f.label)}${f.type === 'multiselect' ? ' (includes)' : ''}<select class="in" name="f_${esc(f.key)}"><option value="">Any</option>${f.options.map((o) => opt(o, o, q['f_' + f.key])).join('')}</select></label>`;
+    };
     const active = callFilterKeys(q).filter((k) => q[k]).length;
     return `<details class="card filters" ${active ? 'open' : ''}><summary>Filters${active ? ` <span class="pill teal">${active} on</span>` : ''}</summary>
       <form data-submit="applyFilters" style="display:flex;flex-direction:column;gap:12px"><div class="form">
@@ -43,7 +48,7 @@
         <label class="f">Visit to<input class="in" type="date" name="to" value="${esc(q.to || '')}"></label>
         <label class="f">City or pincode<input class="in" name="place" value="${esc(q.place || '')}" placeholder="e.g. Meerut or 250001"></label>
         ${fields.map(fieldFilter).join('')}
-      </div>${sel ? '' : '<div class="small muted">Pick one service to also filter by its own fields (service type, warranty, tonnage, TDS…).</div>'}
+      </div>${sel ? '' : '<div class="small muted">Pick one service to also filter by its own fields (service type, warranty, tonnage, TDS, serial no…).</div>'}
       <div class="row" style="justify-content:flex-end"><button type="button" class="btn ghost" data-act="clearFilters">Clear</button><button class="btn primary" type="submit">Apply filters</button></div></form></details>`;
   };
   const callFilterActions = (q) => ({
