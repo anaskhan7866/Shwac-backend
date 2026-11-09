@@ -128,4 +128,26 @@ class InventoryTest extends TestCase
         $this->postJson('/api/v1/admin/stock/receive', ['warehouse_id' => $this->store->id, 'items' => [['product_id' => $this->filter->id, 'quantity' => 1]]])
             ->assertForbidden();
     }
+
+    #[Test]
+    public function switched_off_vans_are_hidden_and_their_stock_returns_to_the_main_store(): void
+    {
+        $inv = app(InventoryService::class);
+        $van = $inv->vanFor($this->technician());
+        $inv->receive($this->store, $this->filter, 10);
+        $inv->transfer($this->store, $van, $this->filter, 3);
+        $van->update(['is_active' => false, 'name' => 'Van (removed user)']); // what a removed login leaves behind
+
+        $this->actingAsUser($this->staff('super_admin'));
+        $names = collect($this->getJson('/api/v1/admin/warehouses')->assertOk()->json())->pluck('name');
+        $this->assertNotContains('Van (removed user)', $names->all());
+
+        $migration = require database_path('migrations/2026_11_09_110000_retire_switched_off_stores.php');
+        $migration->up();
+
+        $this->assertSame('0.00', $this->qty($van));
+        $this->assertSame('10.00', $this->qty($this->store));
+        $this->assertSame(0, StockAlert::where('warehouse_id', $van->id)->where('status', 'open')->count());
+        $this->getJson('/api/v1/admin/dashboard')->assertOk()->assertJsonPath('inventory.low_stock_alerts', 0);
+    }
 }

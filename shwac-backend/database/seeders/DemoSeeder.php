@@ -46,7 +46,7 @@ class DemoSeeder extends Seeder
 
         // ---- Inventory: main store, spare parts with barcodes, stock issued to each technician's van
         $inv = app(InventoryService::class);
-        $store = Warehouse::firstOrCreate(['code' => 'HQ-MAIN'], ['branch_id' => $hq->id, 'name' => 'HQ Main Store', 'type' => 'main']);
+        $store = Warehouse::firstOrCreate(['code' => 'HQ-MAIN'], ['branch_id' => $hq->id, 'name' => 'Main Store', 'type' => 'main']);
         $parts = [
             ['SED-10', 'Sediment filter 10"', 'filter', '84212190', 250, 120, '8901030865071', 20, 3],
             ['CRB-10', 'Carbon filter (post)', 'filter', '84212190', 450, 260, '8901030865088', 15, 2],

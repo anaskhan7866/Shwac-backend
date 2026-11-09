@@ -73,7 +73,7 @@ class DashboardController extends Controller
         ];
         $out['inventory'] = [
             'low_stock_alerts' => \App\Models\StockAlert::where('status', 'open')
-                ->whereIn('warehouse_id', $scope(\App\Models\Warehouse::query())->pluck('id'))->count(),
+                ->whereIn('warehouse_id', $scope(\App\Models\Warehouse::query())->where('is_active', true)->pluck('id'))->count(),
         ];
 
         if ($user->hasPermission('reports.finance')) {

@@ -64,7 +64,8 @@ class InventoryController extends Controller
     public function warehouses(Request $request): JsonResponse
     {
         return response()->json(
-            Warehouse::query()->visibleTo($request->user())->with('owner:id,name')
+            // Switched-off stores (e.g. vans of removed logins) are not listed anywhere.
+            Warehouse::query()->visibleTo($request->user())->where('is_active', true)->with('owner:id,name')
                 ->withSum('stockLevels as total_units', 'quantity')
                 ->orderBy('type')->orderBy('name')->get()
         );
@@ -186,7 +187,7 @@ class InventoryController extends Controller
 
     public function alerts(Request $request): JsonResponse
     {
-        $visible = Warehouse::query()->visibleTo($request->user())->pluck('id');
+        $visible = Warehouse::query()->visibleTo($request->user())->where('is_active', true)->pluck('id');
 
         return response()->json(
             StockAlert::where('status', $request->input('status', 'open'))->whereIn('warehouse_id', $visible)
