@@ -13,7 +13,7 @@
     const r = await SH.get('/admin/invoices', params);
     const sum = (k) => r.data.reduce((a, i) => a + (i.status === 'cancelled' || i.status === 'draft' ? 0 : Number(i[k] || 0)), 0);
     return {
-      html: `${head('Invoices', 'GST invoices. Same state as the branch → CGST + SGST; another state → IGST. Numbers run per branch per financial year.', `${searchBox(q.q, 'Invoice no. or phone')}${SH.can('invoices.manage') ? '<a class="btn primary" href="#/invoices/new">+ New invoice</a>' : ''}`)}
+      html: `${head('Invoices', SH.hideBranches ? 'GST invoices. Customer in your state → CGST + SGST; another state → IGST. Numbers run per financial year.' : 'GST invoices. Same state as the branch → CGST + SGST; another state → IGST. Numbers run per branch per financial year.', `${searchBox(q.q, 'Invoice no. or phone')}${SH.can('invoices.manage') ? '<a class="btn primary" href="#/invoices/new">+ New invoice</a>' : ''}`)}
         ${chips('status', st, [['', 'All'], ['outstanding', 'Unpaid'], ['draft', 'Drafts'], ['issued', 'Issued'], ['partially_paid', 'Part paid'], ['paid', 'Paid'], ['cancelled', 'Cancelled']])}
         <form data-submit="range" class="row"><label class="f">From<input class="in" type="date" name="from" value="${esc(q.from || '')}"></label><label class="f">To<input class="in" type="date" name="to" value="${esc(q.to || '')}"></label><button class="btn" type="submit" style="align-self:flex-end">Apply dates</button>
           <span class="muted" style="align-self:flex-end;margin-left:auto">This page: taxable ${money(sum('taxable_value'))} · CGST ${money(sum('cgst_total'))} · SGST ${money(sum('sgst_total'))} · IGST ${money(sum('igst_total'))} · balance ${money(sum('balance_due'))}</span></form>
@@ -43,7 +43,7 @@
         <form data-submit="save" class="card"><div class="form">
           <div class="full">${invoice ? `<div class="picked">${esc(pre ? pre.name + ' · ' + pre.phone : '')}</div><input type="hidden" name="customer_id" value="${invoice.customer_id}">` : SH.customerPicker('customer_id', 'Customer', pre, 'picked')}</div>
           ${invoice ? '' : `<label class="f">Billing address<select class="in" name="customer_address_id" data-addr><option value="">Default address</option></select></label>`}
-          ${invoice ? '' : `<label class="f">Take parts from<select class="in" name="stock_warehouse_id"><option value="">Branch main store (automatic)</option>${whs.map((w) => opt(w.id, w.name)).join('')}</select></label>`}
+          ${invoice ? '' : `<label class="f">Take parts from<select class="in" name="stock_warehouse_id"><option value="">${SH.hideBranches ? 'Main store' : 'Branch main store'} (automatic)</option>${whs.map((w) => opt(w.id, w.name)).join('')}</select></label>`}
           ${q && q.job ? `<input type="hidden" name="service_job_id" value="${esc(q.job)}"><div class="note full">For service job #${esc(q.job)}</div>` : ''}
         </div>
         <div class="tablebox" style="border-radius:12px"><table class="t" style="min-width:900px"><thead><tr><th style="width:150px">Type</th><th>Item</th><th style="width:80px">Qty</th><th style="width:120px">Price</th><th style="width:100px">Discount</th><th style="width:90px">GST %</th><th class="right" style="width:120px">Amount</th><th></th></tr></thead><tbody data-lines></tbody></table></div>
@@ -126,7 +126,7 @@
         <div class="grid two"><div style="display:flex;flex-direction:column;gap:14px">
           <section class="card"><div class="grid">
             <div><div class="small muted">Billed to</div><b>${esc(a.name || i.customer.name)}</b><div>${esc([a.line1, a.line2, a.city, a.pincode].filter(Boolean).join(', '))}</div><div class="muted">${esc(a.state || '')} (${esc(a.state_code || '')}) · ${esc(a.phone || '')}</div>${i.customer_gstin ? `<div>GSTIN ${esc(i.customer_gstin)}</div>` : ''}</div>
-            <div><div class="small muted">From</div><b>${esc(i.branch.name)}</b>${i.branch.gstin ? `<div>GSTIN ${esc(i.branch.gstin)}</div>` : ''}<div class="muted">${esc(i.branch.state)} (${esc(i.branch.state_code)})</div></div>
+            <div><div class="small muted">From</div><b>${esc(SH.hideBranches ? SH.cfg.appName : i.branch.name)}</b>${i.branch.gstin ? `<div>GSTIN ${esc(i.branch.gstin)}</div>` : ''}<div class="muted">${esc(i.branch.state)} (${esc(i.branch.state_code)})</div></div>
             <div><div class="small muted">Dates</div><div>Invoice ${d(i.invoice_date)}</div><div>Due ${d(i.due_date)}</div>${i.job ? `<div>Job <a href="#/jobs/${i.job.id}">${esc(i.job.number)}</a></div>` : ''}</div>
           </div></section>
           <div class="tablebox"><table class="t"><thead><tr><th>Item</th><th>HSN/SAC</th><th class="right">Qty</th><th class="right">Rate</th><th class="right">Taxable</th><th class="right">${intra ? 'CGST + SGST' : 'IGST'}</th><th class="right">Total</th></tr></thead><tbody>

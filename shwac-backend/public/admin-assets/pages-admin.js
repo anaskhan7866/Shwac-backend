@@ -91,14 +91,14 @@
     const branches = SH.state.branches || (SH.state.user.branch ? [SH.state.user.branch] : []);
     const isSA = (SH.state.user.roles || []).includes('super_admin') || SH.can('settings.manage');
     const usersHtml = `<div class="row between">${chips('type', q.type || '', [['', 'Everyone'], ['staff', 'Office staff'], ['technician', 'Technicians']])}${searchBox(q.q, 'Name, phone or email')}</div>
-      <div class="tablebox"><table class="t"><thead><tr><th>Name</th><th>Login</th><th>Type</th><th>Roles</th><th>Branch</th><th>Last login</th><th>Status</th><th></th></tr></thead><tbody>
-      ${r.data.map((u) => `<tr><td><b>${esc(u.name)}</b></td><td>${esc(u.email || '')}<div class="sub">${esc(u.phone || '')}</div></td><td>${esc(SH.label(u.user_type))}</td><td>${(u.roles || []).map((x) => esc(x.name)).join(', ')}</td><td>${esc(u.branch ? u.branch.name : 'All')}</td><td>${dt(u.last_login_at)}</td><td>${pill(u.is_active ? 'active' : 'inactive')}</td><td style="white-space:nowrap"><button class="btn sm" data-act="edit" data-id="${u.id}">Edit</button> ${u.id !== SH.state.user.id ? `<button class="btn sm danger" data-act="del" data-id="${u.id}">Delete</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="8" class="empty">No users.</td></tr>'}
+      <div class="tablebox"><table class="t"><thead><tr><th>Name</th><th>Login</th><th>Type</th><th>Roles</th>${SH.hideBranches ? '' : '<th>Branch</th>'}<th>Last login</th><th>Status</th><th></th></tr></thead><tbody>
+      ${r.data.map((u) => `<tr><td><b>${esc(u.name)}</b></td><td>${esc(u.email || '')}<div class="sub">${esc(u.phone || '')}</div></td><td>${esc(SH.label(u.user_type))}</td><td>${(u.roles || []).map((x) => esc(SH.roleName(x.name))).join(', ')}</td>${SH.hideBranches ? '' : `<td>${esc(u.branch ? u.branch.name : 'All')}</td>`}<td>${dt(u.last_login_at)}</td><td>${pill(u.is_active ? 'active' : 'inactive')}</td><td style="white-space:nowrap"><button class="btn sm" data-act="edit" data-id="${u.id}">Edit</button> ${u.id !== SH.state.user.id ? `<button class="btn sm danger" data-act="del" data-id="${u.id}">Delete</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="8" class="empty">No users.</td></tr>'}
       </tbody></table>${pager(r)}</div>`;
     const groups = {}; roles.permissions.forEach((x) => { (groups[x.group] = groups[x.group] || []).push(x); });
     const editableRoles = roles.roles.filter((x) => !['super_admin', 'customer'].includes(x.slug));
     const rolesHtml = `<div class="note">Super Admin always has every permission. Changes apply on the user’s next request.</div>
-      <form data-submit="saveRoles"><div class="tablebox"><table class="t matrix"><thead><tr><th>Permission</th>${editableRoles.map((x) => `<th>${esc(x.name)}</th>`).join('')}</tr></thead><tbody>
-      ${Object.entries(groups).map(([g, list]) => `<tr><td colspan="${editableRoles.length + 1}" style="background:#F8FBFA"><b>${esc(g)}</b></td></tr>${list.map((perm) => `<tr><td>${esc(perm.name)}<div class="sub mono">${esc(perm.slug)}</div></td>${editableRoles.map((x) => `<td><input type="checkbox" name="r${x.id}" value="${esc(perm.slug)}" data-multi="1" ${x.permissions.some((pp) => pp.slug === perm.slug) ? 'checked' : ''} ${isSA ? '' : 'disabled'} aria-label="${esc(x.name + ': ' + perm.name)}"></td>`).join('')}</tr>`).join('')}`).join('')}
+      <form data-submit="saveRoles"><div class="tablebox"><table class="t matrix"><thead><tr><th>Permission</th>${editableRoles.map((x) => `<th>${esc(SH.roleName(x.name))}</th>`).join('')}</tr></thead><tbody>
+      ${Object.entries(groups).map(([g, list]) => `<tr ${SH.hideBranches && g === 'Branches' ? 'hidden' : ''}><td colspan="${editableRoles.length + 1}" style="background:#F8FBFA"><b>${esc(g)}</b></td></tr>${list.map((perm) => `<tr ${SH.hideBranches && g === 'Branches' ? 'hidden' : ''}><td>${esc(perm.name)}<div class="sub mono">${esc(perm.slug)}</div></td>${editableRoles.map((x) => `<td><input type="checkbox" name="r${x.id}" value="${esc(perm.slug)}" data-multi="1" ${x.permissions.some((pp) => pp.slug === perm.slug) ? 'checked' : ''} ${isSA ? '' : 'disabled'} aria-label="${esc(x.name + ': ' + perm.name)}"></td>`).join('')}</tr>`).join('')}`).join('')}
       </tbody></table></div>${isSA ? '<div class="right" style="margin-top:12px"><button class="btn primary" type="submit">Save permissions</button></div>' : ''}</form>`;
     return {
       html: `${head('Staff & roles', 'Office logins (admin panel) and technician logins (Android app).', '<button class="btn primary" data-act="new">+ New login</button>')}
@@ -129,9 +129,10 @@
     function userModal(u) {
       const isTech = u.user_type === 'technician';
       const canMakeSA = isSA;
-      const roleLabel = isTech ? 'Technician' : (u.roles || []).map((x) => x.name || x).join(', ') || 'Office staff';
+      const roleLabel = isTech ? 'Technician' : (u.roles || []).map((x) => SH.roleName(x.name || x)).join(', ') || 'Office staff';
+      const hideB = SH.hideBranches; // branch is picked automatically when the field is hidden
       const branchSelect = (show) => SH.allBranches()
-        ? `<label class="f" data-branch ${show ? '' : 'hidden'}>Branch<select class="in" name="branch_id" ${show ? 'required' : ''}><option value="">Choose a branch…</option>${branches.map((b) => opt(b.id, b.name, u.branch_id)).join('')}</select></label>`
+        ? `<label class="f" data-branch ${show && !hideB ? '' : 'hidden'}>Branch<select class="in" name="branch_id" ${show && !hideB ? 'required' : ''}><option value="">Choose a branch…</option>${branches.map((b) => opt(b.id, b.name, u.branch_id || (hideB && show ? SH.defaultBranchId() : ''))).join('')}</select></label>`
         : '';
       SH.openModal(`<h3>${u.id ? 'Edit ' + esc(u.name) : 'New login'}</h3><form data-submit="save" class="form">
         <label class="f">Name<input class="in" name="name" value="${esc(u.name || '')}" required></label>
@@ -146,8 +147,9 @@
         roleChanged: (el) => {
           const box = el.form.querySelector('[data-branch]'); if (!box) return;
           const tech = el.value === 'technician';
-          box.hidden = !tech; box.querySelector('select').required = tech;
-          if (!tech) box.querySelector('select').value = '';
+          const sel = box.querySelector('select');
+          box.hidden = hideB || !tech; sel.required = tech && !hideB;
+          if (!tech) sel.value = ''; else if (!sel.value && hideB) sel.value = String(SH.defaultBranchId());
         },
         save: async (f) => {
           const b = SH.formData(f); if (!b.password) delete b.password;['email', 'phone'].forEach((k) => { if (!b[k]) b[k] = null; });

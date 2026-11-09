@@ -41,7 +41,7 @@
       <div>
         <div class="muted">{{ $company['legal_name'] ?? $company['name'] ?? config('app.name') }}</div>
         <h1>Tax invoice {{ $invoice->number }}</h1>
-        <div class="muted">{{ $invoice->invoice_date?->format('d M Y') }} · {{ $b->name }}@if($b->gstin) · GSTIN {{ $b->gstin }}@endif</div>
+        <div class="muted">{{ $invoice->invoice_date?->format('d M Y') }}@if($b->gstin) · GSTIN {{ $b->gstin }}@endif</div>
       </div>
       @if($invoice->status === 'cancelled')
         <span class="pill" style="background:#FDECEA;color:var(--bad)">Cancelled</span>

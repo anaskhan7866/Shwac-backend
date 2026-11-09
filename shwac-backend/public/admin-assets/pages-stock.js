@@ -49,7 +49,7 @@
       actions: {
         van: async (el) => { await SH.post(`/admin/technicians/${el.dataset.id}/van`); SH.toast('Van store created.'); SH.reload(); },
         newWh: () => SH.openModal(`<h3>New store</h3><form data-submit="save" class="form"><label class="f">Name<input class="in" name="name" required value="Main Store"></label><label class="f">Code<input class="in" name="code" required placeholder="HQ-MAIN"></label>
-            <label class="f">Branch<select class="in" name="branch_id">${(SH.state.branches || (SH.state.user.branch ? [SH.state.user.branch] : [])).map((b) => opt(b.id, b.name)).join('')}</select></label>
+            <label class="f" ${SH.hideBranches ? 'hidden' : ''}>Branch<select class="in" name="branch_id">${(SH.state.branches || (SH.state.user.branch ? [SH.state.user.branch] : [])).map((b) => opt(b.id, b.name)).join('')}</select></label>
             <div class="actions full"><button type="button" class="btn" data-act="closeModal">Cancel</button><button class="btn primary" type="submit">Create</button></div></form>`, {
           save: async (f) => { const b = SH.formData(f); b.branch_id = Number(b.branch_id); await SH.post('/admin/warehouses', b); SH.closeModal(); SH.toast('Store created.'); SH.reload(); },
         }),

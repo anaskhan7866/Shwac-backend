@@ -38,8 +38,16 @@
   SH.pill = (s, text) => { const p = PILL[s] || ['', SH.label(s)]; return `<span class="pill ${p[0]}">${esc(text || p[1])}</span>`; };
   SH.can = (perm) => { const p = (SH.state.user && SH.state.user.permissions) || []; return p.includes('*') || p.includes(perm); };
   SH.allBranches = () => SH.can('branches.all');
+  // Hidden from the panel, not removed: the branch picker/fields and the Branches + Running costs pages.
+  // Set hideBranches = false and empty hiddenPages to show them again.
+  SH.hideBranches = true;
+  SH.hiddenPages = ['#/branches', '#/costs'];
+  SH.roleName = (n) => (SH.hideBranches ? String(n || '').replace(/^branch[\s_]+/i, '').replace(/^\w/, (c) => c.toUpperCase()) : n);
+  // The one main branch (lowest id among active ones), same rule the server uses for app sign-ups.
+  SH.defaultBranchId = () => (SH.state.user && SH.state.user.branch && SH.state.user.branch.id)
+    || ((SH.state.branches || []).filter((b) => b.is_active).sort((a, b) => a.id - b.id)[0] || {}).id || '';
   SH.qs = (o) => { const u = new URLSearchParams(); Object.keys(o || {}).forEach((k) => { const v = o[k]; if (v !== undefined && v !== null && v !== '') u.set(k, v); }); const s = u.toString(); return s ? '?' + s : ''; };
-  SH.withBranch = (o) => Object.assign({}, o, SH.allBranches() && SH.state.branch ? { branch_id: SH.state.branch } : {});
+  SH.withBranch = (o) => Object.assign({}, o, !SH.hideBranches && SH.allBranches() && SH.state.branch ? { branch_id: SH.state.branch } : {});
 
   // Form → object. Names like "address.line1" become nested; checkboxes become booleans; data-num inputs become numbers.
   SH.formData = (form) => {
@@ -301,7 +309,7 @@
     const cur = '#' + (location.hash.slice(1).split('?')[0].split('/').slice(0, 2).join('/'));
     const c = SH.state.counts || {};
     box.innerHTML = SH.nav.map(([group, items]) => {
-      const vis = items.filter((i) => !i[2] || SH.can(i[2])); if (!vis.length) return '';
+      const vis = items.filter((i) => !SH.hiddenPages.includes(i[0]) && (!i[2] || SH.can(i[2]))); if (!vis.length) return '';
       return `<nav class="navgroup" aria-label="${esc(group)}"><h6>${esc(group)}</h6>${vis.map((i) => {
         const n = i[3] ? i[3](c) : 0;
         return `<a href="${i[0]}" class="${cur === i[0] ? 'on' : ''}"><span>${esc(i[1])}</span>${n ? `<span class="badge ${i[4] || ''}">${n}</span>` : ''}</a>`;
@@ -314,7 +322,7 @@
     let branchSel = '';
     if (SH.allBranches()) {
       if (!SH.state.branches) { try { SH.state.branches = await SH.get('/admin/branches'); } catch (e) { SH.state.branches = []; } }
-      branchSel = `<label class="f" style="color:#A9BDBF;padding:0 8px">Branch<select class="in" data-change="branch" style="background:#1C4249;color:#fff;border-color:#23464D">
+      if (!SH.hideBranches) branchSel = `<label class="f" style="color:#A9BDBF;padding:0 8px">Branch<select class="in" data-change="branch" style="background:#1C4249;color:#fff;border-color:#23464D">
         <option value="">All branches</option>${SH.state.branches.map((b) => `<option value="${b.id}" ${String(b.id) === String(SH.state.branch) ? 'selected' : ''}>${esc(b.name)}</option>`).join('')}</select></label>`;
     }
     const initials = (u.name || '?').split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase();
@@ -323,7 +331,7 @@
         <div class="brand">${logo()}<div><b>SHWAC</b><span>Service Platform</span></div><button class="menu-btn" data-act="menu" aria-label="Menu">Menu</button></div>
         ${branchSel}
         <div id="nav" style="display:flex;flex-direction:column;gap:12px"></div>
-        <div class="me"><div class="avatar">${esc(initials)}</div><div class="who"><b>${esc(u.name)}</b><span>${esc((u.roles || []).map(SH.label).join(', '))}${u.branch ? ' · ' + esc(u.branch.code) : ''}</span></div><button class="linkbtn" data-act="logout">Log out</button></div>
+        <div class="me"><div class="avatar">${esc(initials)}</div><div class="who"><b>${esc(u.name)}</b><span>${esc((u.roles || []).map((r) => SH.roleName(SH.label(r))).join(', '))}${u.branch && !SH.hideBranches ? ' · ' + esc(u.branch.code) : ''}</span></div><button class="linkbtn" data-act="logout">Log out</button></div>
       </aside>
       <main class="main"><div class="page" id="page"></div></main></div>`;
     drawNav();

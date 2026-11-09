@@ -24,10 +24,7 @@ class DemoSeeder extends Seeder
             'name' => 'Head Office', 'state' => 'Uttar Pradesh', 'state_code' => '09', 'invoice_prefix' => 'SHW',
             'city' => 'Meerut', 'pincode' => '250001', 'address' => 'Main Road', 'phone' => '9000000000',
         ]);
-        Branch::firstOrCreate(['code' => 'DEL'], [
-            'name' => 'Delhi Branch', 'state' => 'Delhi', 'state_code' => '07', 'invoice_prefix' => 'SHD',
-            'city' => 'New Delhi', 'pincode' => '110001',
-        ]);
+        // One company, one (hidden) branch: no second branch is created.
 
         $users = [
             ['Super Admin', 'admin@shwac.test', '9000000001', 'staff', 'super_admin', null],

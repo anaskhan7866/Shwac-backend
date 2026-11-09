@@ -280,7 +280,7 @@
             <div class="full row between"><b>New customer</b><a href="#" data-act="toggleNewCust">Search existing instead</a></div>
             <label class="f">Customer name *<input class="in" name="new_customer.name" maxlength="120" data-nc></label>
             <label class="f">Primary mobile *<input class="in" type="tel" name="new_customer.phone" pattern="[6-9]\\d{9}" maxlength="10" placeholder="10-digit number" data-nc></label>
-            ${SH.allBranches() ? `<label class="f">Branch *<select class="in" name="new_customer.branch_id" data-nc data-ncbranch data-change="ncBranch"><option value="">Choose branch</option>${(SH.state.branches || []).map((x) => opt(x.id, x.name, SH.state.branch)).join('')}</select></label>` : ''}
+            ${SH.allBranches() ? `<label class="f" ${SH.hideBranches ? 'hidden' : ''}>Branch *<select class="in" name="new_customer.branch_id" ${SH.hideBranches ? '' : 'data-nc'} data-ncbranch data-change="ncBranch"><option value="">Choose branch</option>${(SH.state.branches || []).map((x) => opt(x.id, x.name, SH.hideBranches ? SH.defaultBranchId() : SH.state.branch)).join('')}</select></label>` : ''}
             <label class="f full">Address / House no *<input class="in" name="new_customer.address.line1" maxlength="255" placeholder="e.g. B-402, Green Villa" data-nc></label>
             <label class="f">Landmark<input class="in" name="new_customer.address.landmark" maxlength="120" placeholder="e.g. Near City Mall"></label>
             <label class="f">City *<input class="in" name="new_customer.address.city" maxlength="80" data-nc></label>
@@ -468,7 +468,7 @@
     <label class="f">WhatsApp (if different)<input class="in" name="whatsapp" value="${esc(c.whatsapp && c.whatsapp !== c.phone ? c.whatsapp : '')}" pattern="[6-9]\\d{9}" inputmode="numeric"></label>
     <label class="f">Email<input class="in" type="email" name="email" value="${esc(c.email || '')}"></label>
     <label class="f">GSTIN (business customers)<input class="in" name="gstin" value="${esc(c.gstin || '')}" maxlength="15" style="text-transform:uppercase"></label>
-    ${SH.allBranches() ? `<label class="f">Branch<select class="in" name="branch_id" required><option value="">Choose branch</option>${(SH.state.branches || []).map((b) => opt(b.id, b.name, c.branch_id || SH.state.branch || (SH.state.user.branch && SH.state.user.branch.id))).join('')}</select></label>` : ''}
+    ${SH.allBranches() ? `<label class="f" ${SH.hideBranches ? 'hidden' : ''}>Branch<select class="in" name="branch_id" ${SH.hideBranches ? '' : 'required'}><option value="">Choose branch</option>${(SH.state.branches || []).map((b) => opt(b.id, b.name, c.branch_id || (SH.hideBranches ? SH.defaultBranchId() : SH.state.branch || (SH.state.user.branch && SH.state.user.branch.id)))).join('')}</select></label>` : ''}
     <label class="f full">Notes<textarea class="in" name="notes">${esc(c.notes || '')}</textarea></label>`;
 
   page('/customers/new', async () => ({
@@ -487,7 +487,7 @@
     const c = await SH.get('/admin/customers/' + id);
     const m = SH.can('customers.manage');
     return {
-      html: `${head(c.name, `<span class="mono">${esc(c.code)}</span> · ${esc(c.phone)} ${c.branch ? '· ' + esc(c.branch.name) : ''}`, `
+      html: `${head(c.name, `<span class="mono">${esc(c.code)}</span> · ${esc(c.phone)} ${c.branch && !SH.hideBranches ? '· ' + esc(c.branch.name) : ''}`, `
           <button class="btn" data-act="wa" style="color:var(--wa);border-color:var(--wa)">WhatsApp</button>
           ${SH.can('bookings.manage') ? `<a class="btn" href="#/bookings/new?customer=${c.id}">New booking</a>` : ''}
           ${SH.can('complaints.manage') ? '<button class="btn" data-act="complaint">New complaint</button>' : ''}
