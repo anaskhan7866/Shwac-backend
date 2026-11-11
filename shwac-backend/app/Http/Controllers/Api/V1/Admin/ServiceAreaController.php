@@ -18,7 +18,10 @@ class ServiceAreaController extends Controller
     {
         $q = ServiceArea::query()->with('services:id,name,code,service_category_id')->orderBy('pincode');
         if ($s = $request->string('q')->trim()->value()) {
-            $q->where(fn ($w) => $w->where('pincode', 'like', "{$s}%")->orWhere('name', 'like', "%{$s}%")->orWhere('city', 'like', "%{$s}%"));
+            // lower() on both sides: PostgreSQL (production) compares case-sensitively.
+            $s = mb_strtolower(str_replace(['%', '_', '\\'], '', $s));
+            $q->where(fn ($w) => $w->where('pincode', 'like', "{$s}%")
+                ->orWhereRaw('lower(name) like ?', ["%{$s}%"])->orWhereRaw('lower(city) like ?', ["%{$s}%"]));
         }
         $areas = $q->get();
 

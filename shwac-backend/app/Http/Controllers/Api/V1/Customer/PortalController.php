@@ -122,8 +122,10 @@ class PortalController extends Controller
 
             return response()->json(['results' => [['pincode' => $q, 'name' => $area?->name, 'city' => $area?->city, 'serviceable' => (bool) $area]]]);
         }
-        $like = '%'.str_replace(['%', '_'], ['\%', '\_'], $q).'%';
-        $areas = ServiceArea::where('is_active', true)->where(fn ($w) => $w->where('city', 'like', $like)->orWhere('name', 'like', $like))
+        // lower() on both sides: PostgreSQL (production) compares case-sensitively, "noida" must find "Noida".
+        $like = '%'.mb_strtolower(str_replace(['%', '_', '\\'], '', $q)).'%';
+        $areas = ServiceArea::where('is_active', true)
+            ->where(fn ($w) => $w->whereRaw('lower(city) like ?', [$like])->orWhereRaw('lower(name) like ?', [$like]))
             ->orderBy('city')->orderBy('name')->limit(30)->get();
 
         return response()->json(['results' => $areas->map(fn (ServiceArea $a) => ['pincode' => $a->pincode, 'name' => $a->name, 'city' => $a->city, 'serviceable' => true])]);

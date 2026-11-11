@@ -111,6 +111,24 @@ class ServiceAreaTest extends TestCase
     }
 
     #[Test]
+    public function every_customer_screen_loads_for_a_customer_registered_only_by_pincode(): void
+    {
+        $this->service();
+        ServiceArea::create(['pincode' => '313001', 'city' => 'Udaipur', 'all_services' => true]);
+        $c = $this->customer();
+        $c->addresses()->delete();
+        $this->actingAsUser($this->customerUser($c));
+        $this->postJson('/api/v1/customer/location', ['pincode' => '313001', 'city' => 'Udaipur'])->assertOk();
+
+        // Exactly what the app/web home screen loads
+        foreach (['customer/profile', 'catalog', 'customer/invoices?per_page=50', 'customer/complaints?per_page=50',
+            'customer/bookings?per_page=50', 'catalog?all=1'] as $path) {
+            $this->getJson('/api/v1/'.$path)->assertOk();
+        }
+        $this->getJson('/api/v1/customer/places?q=UDAIPUR')->assertOk()->assertJsonPath('results.0.pincode', '313001');
+    }
+
+    #[Test]
     public function the_admin_manages_pincodes_and_their_services(): void
     {
         $ro = $this->service(['code' => 'RO-B']);
@@ -127,6 +145,8 @@ class ServiceAreaTest extends TestCase
         $this->patchJson("/api/v1/admin/service-areas/{$id}", ['service_ids' => [$ro->id, $ac->id]])->assertOk()->assertJsonCount(2, 'services');
         $this->patchJson("/api/v1/admin/service-areas/{$id}", ['service_ids' => []])->assertOk()->assertJsonCount(0, 'services');
 
+        $this->getJson('/api/v1/admin/service-areas?q=noida')->assertOk()->assertJsonCount(1, 'areas'); // any letter case
+        $this->getJson('/api/v1/admin/service-areas?q=SECTOR')->assertOk()->assertJsonCount(1, 'areas');
         $list = $this->getJson('/api/v1/admin/service-areas')->assertOk();
         $this->assertSame(1, collect($list->json('areas'))->firstWhere('pincode', '201301')['customers']);
         $this->assertNotContains('201301', collect($list->json('uncovered'))->pluck('pincode')->all());
