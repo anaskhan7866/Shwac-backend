@@ -14,11 +14,10 @@ use App\Services\Operations\BookingService;
 use App\Services\Operations\ComplaintService;
 use App\Services\Payments\PaymentService;
 use App\Services\Payments\RazorpayClient;
+use App\Support\Geo;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
@@ -82,21 +81,7 @@ class PortalController extends Controller
     public function locate(Request $request): JsonResponse
     {
         $data = $request->validate(['lat' => ['required', 'numeric', 'between:-90,90'], 'lng' => ['required', 'numeric', 'between:-180,180']]);
-        $key = sprintf('geo.reverse.%.3f,%.3f', $data['lat'], $data['lng']);
-
-        $a = Cache::get($key);
-        if ($a === null) {
-            try {
-                $res = Http::timeout(8)->withHeaders(['User-Agent' => 'SHWAC-Water-Care/1.0 ('.config('app.url').')', 'Accept-Language' => 'en'])
-                    ->get('https://nominatim.openstreetmap.org/reverse', ['format' => 'jsonv2', 'lat' => $data['lat'], 'lon' => $data['lng'], 'addressdetails' => 1, 'zoom' => 18]);
-                $a = $res->successful() ? (array) $res->json('address', []) : [];
-            } catch (\Throwable) {
-                $a = [];
-            }
-            if ($a) {
-                Cache::put($key, $a, now()->addDay());
-            }
-        }
+        $a = Geo::reverse((float) $data['lat'], (float) $data['lng']);
         $pincode = preg_replace('/\D/', '', (string) ($a['postcode'] ?? ''));
         abort_if(strlen($pincode) !== 6, 422, 'Could not find your PIN code from your location. Please type your address.');
 
@@ -131,7 +116,11 @@ class PortalController extends Controller
         return response()->json(['results' => $areas->map(fn (ServiceArea $a) => ['pincode' => $a->pincode, 'name' => $a->name, 'city' => $a->city, 'serviceable' => true])]);
     }
 
-    /** Save where the customer is (sign-up). GPS is optional: without it the PIN code alone decides their services. */
+    /**
+     * Save where the customer is (sign-up). GPS is optional: without it the PIN code alone decides their services.
+     * With GPS, a customer with no address yet gets one from their location, saved as the default address
+     * (with the PIN code they confirmed), so bookings and the technician can use it straight away.
+     */
     public function setLocation(Request $request): JsonResponse
     {
         $data = $request->validate([
@@ -149,7 +138,19 @@ class PortalController extends Controller
             'lng' => $data['lng'] ?? null,
         ]);
 
-        return response()->json(['pincode' => $c->pincode, 'city' => $c->city, 'area' => $area?->name, 'serviceable' => (bool) $area]);
+        $address = null;
+        if (isset($data['lat'], $data['lng']) && ! $c->addresses()->exists()) {
+            $fields = Geo::addressFromGps((float) $data['lat'], (float) $data['lng'], $data['pincode']);
+            if ($fields) {
+                $address = $c->addresses()->create($fields + ['is_default' => true]);
+                $c->update(['city' => $fields['city']]);
+            }
+        }
+
+        return response()->json([
+            'pincode' => $c->pincode, 'city' => $c->city, 'area' => $area?->name, 'serviceable' => (bool) $area,
+            'address' => $address,
+        ]);
     }
 
     public function storeProduct(Request $request): JsonResponse

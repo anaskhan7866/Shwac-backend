@@ -139,6 +139,70 @@ class ServiceAreaTest extends TestCase
     }
 
     #[Test]
+    public function allowing_gps_at_sign_up_saves_the_gps_address_as_the_default_address(): void
+    {
+        Http::fake(['nominatim.openstreetmap.org/*' => Http::response(['address' => [
+            'house_number' => '14', 'road' => 'Hiran Magri Road', 'neighbourhood' => 'Sector 4', 'city' => 'Udaipur',
+            'state_district' => 'Udaipur', 'state' => 'Rajasthan', 'postcode' => '313002',
+        ]])]);
+        ServiceArea::create(['pincode' => '313001', 'city' => 'Udaipur', 'all_services' => true]);
+        $c = $this->customer();
+        $c->addresses()->delete();
+        $this->actingAsUser($this->customerUser($c));
+
+        // The customer confirmed 313001; that PIN code is kept on the address
+        $this->postJson('/api/v1/customer/location', ['pincode' => '313001', 'lat' => 24.5714, 'lng' => 73.7091])->assertOk()
+            ->assertJsonPath('address.line1', '14 Hiran Magri Road')->assertJsonPath('address.pincode', '313001');
+
+        $address = $c->addresses()->sole();
+        $this->assertTrue($address->is_default);
+        $this->assertSame(['14 Hiran Magri Road', 'Sector 4', 'Udaipur', 'Rajasthan', '08', '313001'],
+            [$address->line1, $address->line2, $address->city, $address->state, $address->state_code, $address->pincode]);
+        $this->assertEquals(24.5714, (float) $address->lat);
+
+        // Shown in the customer's profile, and used for services and booking
+        $this->getJson('/api/v1/customer/profile')->assertJsonPath('addresses.0.line1', '14 Hiran Magri Road')->assertJsonPath('addresses.0.is_default', true);
+        $this->getJson('/api/v1/catalog')->assertJsonPath('location.serviceable', true);
+        $ro = $this->service();
+        $this->postJson('/api/v1/customer/bookings', ['service_id' => $ro->id, 'scheduled_date' => today()->toDateString(), 'form_data' => ['brand' => 'Kent']])
+            ->assertCreated()->assertJsonPath('customer_address_id', $address->id);
+
+        // ...and in the admin customer page
+        $this->actingAsUser($this->staff('super_admin'));
+        $this->getJson("/api/v1/admin/customers/{$c->id}")->assertOk()->assertJsonPath('addresses.0.line1', '14 Hiran Magri Road');
+
+        // Never a second copy when location is saved again
+        $this->actingAsUser($c->user->fresh());
+        $this->postJson('/api/v1/customer/location', ['pincode' => '313001', 'lat' => 24.5714, 'lng' => 73.7091])->assertOk()->assertJsonPath('address', null);
+        $this->assertSame(1, $c->addresses()->count());
+    }
+
+    #[Test]
+    public function no_address_is_made_when_gps_is_refused_or_the_spot_has_no_address(): void
+    {
+        Http::fake(['nominatim.openstreetmap.org/*' => Http::response(['address' => ['country' => 'India', 'state' => 'Rajasthan']])]);
+        $c = $this->customer();
+        $c->addresses()->delete();
+        $this->actingAsUser($this->customerUser($c));
+
+        $this->postJson('/api/v1/customer/location', ['pincode' => '313001'])->assertOk()->assertJsonPath('address', null);
+        Http::assertNothingSent(); // GPS refused: no lookup at all
+        $this->postJson('/api/v1/customer/location', ['pincode' => '313001', 'lat' => 24.1, 'lng' => 73.1])->assertOk()->assertJsonPath('address', null);
+        $this->assertSame(0, $c->addresses()->count());
+        $this->assertSame('313001', $c->fresh()->pincode); // still a customer on their PIN code
+    }
+
+    #[Test]
+    public function state_names_from_gps_map_to_gst_state_codes(): void
+    {
+        $this->assertSame('08', \App\Support\Geo::stateCode('Rajasthan'));
+        $this->assertSame('07', \App\Support\Geo::stateCode('NCT of Delhi'));
+        $this->assertSame('21', \App\Support\Geo::stateCode('Orissa'));
+        $this->assertSame('09', \App\Support\Geo::stateCode('uttar pradesh'));
+        $this->assertNull(\App\Support\Geo::stateCode('Atlantis'));
+    }
+
+    #[Test]
     public function the_postgres_connection_does_not_rely_on_server_side_prepared_statements(): void
     {
         // Neon's pooler (PgBouncer, transaction mode) broke named prepared statements: random 500s
