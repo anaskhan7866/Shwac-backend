@@ -5,6 +5,7 @@ namespace Tests;
 use App\Models\Branch;
 use App\Models\Customer;
 use App\Models\Service;
+use App\Models\ServiceArea;
 use App\Models\ServiceCategory;
 use App\Models\User;
 use Database\Seeders\RolesAndPermissionsSeeder;
@@ -26,6 +27,8 @@ abstract class TestCase extends BaseTestCase
         $this->travelTo(now()->setDate(2026, 10, 17)->setTime(10, 0));
         $this->seed([RolesAndPermissionsSeeder::class, SystemSeeder::class]);
         $this->branch = $this->makeBranch('HQ', '09', 'Uttar Pradesh');
+        // Test customers live at 250001; the admin has set it up as a service area with every service.
+        ServiceArea::create(['pincode' => '250001', 'name' => 'Meerut City', 'city' => 'Meerut', 'all_services' => true]);
 
         config([
             'services.whatsapp.enabled' => true,

@@ -284,6 +284,7 @@
     ]],
     ['Setup', [
       ['#/catalog', 'Services & prices', 'services.manage'],
+      ['#/areas', 'Service areas (PIN codes)', 'services.manage'],
       ['#/users', 'Staff & roles', 'users.manage'],
       ['#/branches', 'Branches', 'branches.manage'],
       ['#/settings', 'Settings', 'settings.manage'],

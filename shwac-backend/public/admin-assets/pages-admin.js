@@ -83,6 +83,57 @@
     }
   });
 
+  // =============================================================== SERVICE AREAS (PIN codes)
+  page('/areas', async (p, q) => {
+    const [r, cats, svcs] = await Promise.all([SH.get('/admin/service-areas', { q: q.q }), SH.get('/admin/catalog/categories'), SH.get('/admin/catalog/services')]);
+    const svcName = (a) => (a.all_services ? '<b>All services</b>' : (a.services || []).map((s) => esc(s.name)).join(', ') || '<span class="pill">None</span>');
+    return {
+      html: `${head('Service areas', 'Customers only see and book the services you offer at their PIN code. A PIN code that is not listed here (or is switched off) sees no services.', '<button class="btn primary" data-act="add">+ PIN code</button>')}
+        <div class="row between">${searchBox(q.q, 'PIN code, area or city')}<span class="muted small">${r.areas.length} PIN code${r.areas.length === 1 ? '' : 's'}</span></div>
+        <div class="tablebox"><table class="t"><thead><tr><th>PIN code</th><th>Area</th><th>City</th><th>Services offered</th><th class="right">Customers</th><th>Status</th><th></th></tr></thead><tbody>
+        ${r.areas.map((a) => `<tr><td class="mono"><b>${esc(a.pincode)}</b></td><td>${esc(a.name || '—')}</td><td>${esc(a.city || '—')}</td><td class="small">${svcName(a)}</td><td class="right">${a.customers}</td><td>${pill(a.is_active ? 'active' : 'inactive')}</td>
+          <td style="white-space:nowrap"><button class="btn sm" data-act="edit" data-id="${a.id}">Edit</button> <button class="btn sm danger" data-act="del" data-id="${a.id}">Delete</button></td></tr>`).join('') || '<tr><td colspan="7" class="empty">No PIN codes yet. Customers see no services until you add their PIN code.</td></tr>'}
+        </tbody></table></div>
+        ${r.uncovered.length ? `<section class="card"><div class="cardhead"><h2>Customers in PIN codes you don’t serve yet</h2></div><div class="muted small">These customers see “not available in your area”. Add the PIN code to start serving them.</div>
+          <div class="tablebox" style="border-radius:12px"><table class="t"><thead><tr><th>PIN code</th><th>City</th><th class="right">Customers</th><th></th></tr></thead><tbody>
+          ${r.uncovered.map((u) => `<tr><td class="mono"><b>${esc(u.pincode)}</b></td><td>${esc(u.city || '—')}</td><td class="right">${u.total}</td><td><button class="btn sm" data-act="addPin" data-pin="${esc(u.pincode)}" data-city="${esc(u.city || '')}">+ Add</button></td></tr>`).join('')}
+          </tbody></table></div></section>` : ''}`,
+      actions: {
+        add: () => areaModal({ is_active: true, services: [] }),
+        addPin: (el) => areaModal({ pincode: el.dataset.pin, city: el.dataset.city, is_active: true, services: [] }),
+        edit: (el) => areaModal(r.areas.find((a) => String(a.id) === el.dataset.id)),
+        del: async (el) => {
+          const a = r.areas.find((x) => String(x.id) === el.dataset.id);
+          if (!(await SH.confirm('Delete PIN code ' + a.pincode + '?', a.customers ? `${a.customers} customer(s) there will stop seeing services.` : 'Customers there will stop seeing services.', 'Delete'))) return;
+          await SH.api('DELETE', '/admin/service-areas/' + a.id); SH.toast('PIN code removed.'); SH.reload();
+        },
+      },
+    };
+    function areaModal(a) {
+      const on = new Set((a.services || []).map((s) => s.id));
+      SH.openModal(`<h3>${a.id ? 'Edit PIN code ' + esc(a.pincode) : 'Add PIN code'}</h3><form data-submit="save" style="display:flex;flex-direction:column;gap:12px"><div class="form">
+        <label class="f">PIN code<input class="in mono" name="pincode" value="${esc(a.pincode || '')}" required pattern="\\d{6}" maxlength="6" inputmode="numeric" placeholder="250001"></label>
+        <label class="f">Area / locality<input class="in" name="name" value="${esc(a.name || '')}" maxlength="120" placeholder="Shastri Nagar"></label>
+        <label class="f">City<input class="in" name="city" value="${esc(a.city || '')}" maxlength="80" placeholder="Meerut"></label>
+        <label class="check"><input type="checkbox" name="is_active" ${a.is_active !== false ? 'checked' : ''}> Serving this PIN code</label>
+        <label class="check full"><input type="checkbox" name="all_services" data-change="toggleAll" ${a.all_services ? 'checked' : ''}> Offer <b>all services</b> here (including services added later)</label></div>
+        <div data-pick ${a.all_services ? 'hidden' : ''}><div class="row between"><b>Services offered here</b><span class="row"><button type="button" class="btn sm ghost" data-act="pickAll">Tick all</button><button type="button" class="btn sm ghost" data-act="pickNone">Clear</button></span></div>
+          ${cats.map((c) => { const list = svcs.filter((s) => s.service_category_id === c.id); return list.length ? `<div style="margin-top:8px"><div class="small muted"><b>${esc(c.name)}</b></div><div class="row" style="flex-wrap:wrap;gap:4px 16px">${list.map((s) => `<label class="check"><input type="checkbox" data-svc value="${s.id}" ${on.has(s.id) ? 'checked' : ''}> ${esc(s.name)}${s.is_active ? '' : ' <span class="pill">Off</span>'}</label>`).join('')}</div></div>` : ''; }).join('')}</div>
+        <div class="actions"><button type="button" class="btn" data-act="closeModal">Cancel</button><button class="btn primary" type="submit">Save</button></div></form>`, {
+        toggleAll: (el) => { document.querySelector('#modal-root [data-pick]').hidden = el.checked; },
+        pickAll: () => document.querySelectorAll('#modal-root [data-svc]').forEach((x) => { x.checked = true; }),
+        pickNone: () => document.querySelectorAll('#modal-root [data-svc]').forEach((x) => { x.checked = false; }),
+        save: async (f) => {
+          const b = SH.formData(f);
+          b.service_ids = [...f.querySelectorAll('[data-svc]:checked')].map((x) => Number(x.value));
+          if (!b.all_services && !b.service_ids.length) { SH.toast('Tick at least one service, or “all services”. To stop serving this PIN code, untick “Serving this PIN code”.', true); return; }
+          if (a.id) await SH.patch('/admin/service-areas/' + a.id, b); else await SH.post('/admin/service-areas', b);
+          SH.closeModal(); SH.toast('Service area saved.'); SH.reload();
+        },
+      }, { wide: true });
+    }
+  });
+
   // =============================================================== USERS & ROLES
   page('/users', async (p, q) => {
     const tab = q.tab || 'users';

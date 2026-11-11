@@ -9,14 +9,18 @@ use App\Models\Complaint;
 use App\Models\Customer;
 use App\Models\Invoice;
 use App\Models\Service;
+use App\Models\ServiceArea;
 use App\Services\Operations\BookingService;
 use App\Services\Operations\ComplaintService;
 use App\Services\Payments\PaymentService;
 use App\Services\Payments\RazorpayClient;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Customer website / app: profile, addresses, products, bookings, complaints, invoices, payments.
@@ -71,6 +75,81 @@ class PortalController extends Controller
         return response()->json($address, 201);
     }
 
+    /**
+     * Phone GPS → PIN code, city and area, to pre-fill the address form at sign-up.
+     * Uses OpenStreetMap's free lookup (no API key); results are cached per ~100 m for a day.
+     */
+    public function locate(Request $request): JsonResponse
+    {
+        $data = $request->validate(['lat' => ['required', 'numeric', 'between:-90,90'], 'lng' => ['required', 'numeric', 'between:-180,180']]);
+        $key = sprintf('geo.reverse.%.3f,%.3f', $data['lat'], $data['lng']);
+
+        $a = Cache::get($key);
+        if ($a === null) {
+            try {
+                $res = Http::timeout(8)->withHeaders(['User-Agent' => 'SHWAC-Water-Care/1.0 ('.config('app.url').')', 'Accept-Language' => 'en'])
+                    ->get('https://nominatim.openstreetmap.org/reverse', ['format' => 'jsonv2', 'lat' => $data['lat'], 'lon' => $data['lng'], 'addressdetails' => 1, 'zoom' => 18]);
+                $a = $res->successful() ? (array) $res->json('address', []) : [];
+            } catch (\Throwable) {
+                $a = [];
+            }
+            if ($a) {
+                Cache::put($key, $a, now()->addDay());
+            }
+        }
+        $pincode = preg_replace('/\D/', '', (string) ($a['postcode'] ?? ''));
+        abort_if(strlen($pincode) !== 6, 422, 'Could not find your PIN code from your location. Please type your address.');
+
+        return response()->json([
+            'pincode' => $pincode,
+            'line2' => collect([$a['road'] ?? null, $a['neighbourhood'] ?? $a['suburb'] ?? $a['quarter'] ?? null])->filter()->implode(', ') ?: null,
+            'city' => $a['city'] ?? $a['town'] ?? $a['village'] ?? $a['county'] ?? $a['state_district'] ?? null,
+            'district' => $a['state_district'] ?? $a['county'] ?? null,
+            'state' => $a['state'] ?? null,
+            'serviceable' => (bool) ServiceArea::forPincode($pincode),
+        ]);
+    }
+
+    /**
+     * Sign-up step "PIN code or city": a 6-digit PIN code is checked as is; a city / area name
+     * lists the PIN codes the company serves there, so the customer can pick theirs.
+     */
+    public function places(Request $request): JsonResponse
+    {
+        $q = trim($request->validate(['q' => ['required', 'string', 'min:2', 'max:80']])['q']);
+        if (preg_match('/^\d{6}$/', $q)) {
+            $area = ServiceArea::forPincode($q);
+
+            return response()->json(['results' => [['pincode' => $q, 'name' => $area?->name, 'city' => $area?->city, 'serviceable' => (bool) $area]]]);
+        }
+        $like = '%'.str_replace(['%', '_'], ['\%', '\_'], $q).'%';
+        $areas = ServiceArea::where('is_active', true)->where(fn ($w) => $w->where('city', 'like', $like)->orWhere('name', 'like', $like))
+            ->orderBy('city')->orderBy('name')->limit(30)->get();
+
+        return response()->json(['results' => $areas->map(fn (ServiceArea $a) => ['pincode' => $a->pincode, 'name' => $a->name, 'city' => $a->city, 'serviceable' => true])]);
+    }
+
+    /** Save where the customer is (sign-up). GPS is optional: without it the PIN code alone decides their services. */
+    public function setLocation(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'pincode' => ['required', 'digits:6'],
+            'city' => ['nullable', 'string', 'max:80'],
+            'lat' => ['nullable', 'numeric', 'between:-90,90', 'required_with:lng'],
+            'lng' => ['nullable', 'numeric', 'between:-180,180', 'required_with:lat'],
+        ]);
+        $area = ServiceArea::forPincode($data['pincode']);
+        $c = $this->customer($request);
+        $c->update([
+            'pincode' => $data['pincode'],
+            'city' => ($data['city'] ?? null) ?: $area?->city ?: $c->city,
+            'lat' => $data['lat'] ?? null,
+            'lng' => $data['lng'] ?? null,
+        ]);
+
+        return response()->json(['pincode' => $c->pincode, 'city' => $c->city, 'area' => $area?->name, 'serviceable' => (bool) $area]);
+    }
+
     public function storeProduct(Request $request): JsonResponse
     {
         $c = $this->customer($request);
@@ -116,6 +195,17 @@ class PortalController extends Controller
             'priority' => ['nullable', Rule::in(Booking::PRIORITIES)],
             'whatsapp' => ['nullable', 'regex:/^[6-9]\d{9}$/'],
         ]);
+        // Only services the admin offers at this address's PIN code ("Service areas").
+        $service = Service::findOrFail($data['service_id']);
+        $c = $this->customer($request);
+        $address = $c->addresses()->find($data['customer_address_id'] ?? null) ?? $c->defaultAddress;
+        if ($address) {
+            $area = ServiceArea::forPincode($address->pincode);
+            if (! $area || ! $area->offers($service)) {
+                throw ValidationException::withMessages(['service_id' => "Sorry, {$service->name} is not available at PIN code {$address->pincode} yet."]);
+            }
+        }
+
         // Customers never set the charge or the technician; the office does.
         $booking = $bookings->create($this->customer($request), Service::findOrFail($data['service_id']), $data + ['source' => 'app'], $request->user());
 

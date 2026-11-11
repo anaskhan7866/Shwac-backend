@@ -27,6 +27,12 @@ class Customer extends Model
         return $this->hasOne(CustomerAddress::class)->orderByDesc('is_default')->oldest('id');
     }
 
+    /** PIN code that decides which services the customer sees: their default address, else the one given at sign-up. */
+    public function servicePincode(): ?string
+    {
+        return $this->defaultAddress?->pincode ?: $this->pincode;
+    }
+
     /** Number used for WhatsApp, in E.164 without '+', e.g. 919876543210 */
     public function whatsappNumber(): string
     {

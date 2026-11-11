@@ -72,6 +72,10 @@ return function () {
                 Route::patch('catalog/categories/{category}', [Admin\CatalogController::class, 'updateCategory']);
                 Route::post('catalog/services', [Admin\CatalogController::class, 'storeService']);
                 Route::patch('catalog/services/{service}', [Admin\CatalogController::class, 'updateService']);
+                Route::get('service-areas', [Admin\ServiceAreaController::class, 'index']);
+                Route::post('service-areas', [Admin\ServiceAreaController::class, 'store']);
+                Route::patch('service-areas/{area}', [Admin\ServiceAreaController::class, 'update']);
+                Route::delete('service-areas/{area}', [Admin\ServiceAreaController::class, 'destroy']);
             });
 
             Route::middleware('permission:bookings.view')->group(function () {
@@ -178,6 +182,9 @@ return function () {
             Route::get('profile', [PortalController::class, 'profile']);
             Route::patch('profile', [PortalController::class, 'updateProfile']);
             Route::post('addresses', [PortalController::class, 'storeAddress']);
+            Route::get('locate', [PortalController::class, 'locate'])->middleware('throttle:20,1');
+            Route::get('places', [PortalController::class, 'places'])->middleware('throttle:60,1');
+            Route::post('location', [PortalController::class, 'setLocation']);
             Route::post('products', [PortalController::class, 'storeProduct']);
 
             Route::get('bookings', [PortalController::class, 'bookings']);
