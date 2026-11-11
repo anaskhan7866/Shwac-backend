@@ -97,6 +97,12 @@ return [
             'prefix_indexes' => true,
             'search_path' => 'public',
             'sslmode' => env('DB_SSLMODE', 'prefer'),
+            // Production uses Neon's connection pooler (PgBouncer, transaction mode). Server-side prepared
+            // statements ("pdo_stmt_…") don't survive there: requests randomly failed with 500 or read another
+            // request's statement. Emulated prepares send each query complete (values safely quoted by PDO).
+            'options' => [
+                PDO::ATTR_EMULATE_PREPARES => (bool) env('DB_EMULATE_PREPARES', true),
+            ],
         ],
 
         'sqlsrv' => [

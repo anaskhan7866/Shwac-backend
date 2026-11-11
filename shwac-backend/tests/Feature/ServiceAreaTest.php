@@ -111,6 +111,46 @@ class ServiceAreaTest extends TestCase
     }
 
     #[Test]
+    public function every_service_the_admin_ticks_is_shown_to_the_customer(): void
+    {
+        $cat2 = \App\Models\ServiceCategory::create(['name' => 'Solar', 'slug' => 'solar', 'sort_order' => 2]);
+        $ac = $this->service(['name' => 'Air Conditioner', 'code' => 'HA-AC', 'sort_order' => 1]);
+        $wm = $this->service(['name' => 'Washing Machine', 'code' => 'HA-WM', 'sort_order' => 2]);
+        $ro = $this->service(['name' => 'RO Purifier', 'code' => 'HA-RO', 'sort_order' => 3]);
+        $pv = $this->service(['name' => 'Solar Panel', 'code' => 'SO-PV', 'service_category_id' => $cat2->id]);
+        $c = $this->customer();
+        $c->addresses()->delete();
+        $this->actingAsUser($this->customerUser($c));
+        $this->postJson('/api/v1/customer/location', ['pincode' => '313001'])->assertOk();
+
+        // Set up exactly like the admin page does it: create with ticked services, then edit
+        $this->actingAsUser($this->staff('super_admin'));
+        $id = $this->postJson('/api/v1/admin/service-areas', ['pincode' => '313001', 'city' => 'Udaipur', 'is_active' => true, 'all_services' => false,
+            'service_ids' => [$ac->id, $wm->id]])->assertCreated()->json('id');
+        $this->actingAsUser($c->user->fresh());
+        $this->assertSame([$ac->id, $wm->id], $this->serviceIds($this->getJson('/api/v1/catalog')->json()), 'two ticked services');
+
+        // Only services other than the AC
+        $this->actingAsUser($this->staff('super_admin'));
+        $this->patchJson("/api/v1/admin/service-areas/{$id}", ['service_ids' => [$ro->id, $pv->id], 'all_services' => false])->assertOk();
+        $this->actingAsUser($c->user->fresh());
+        $cat = $this->getJson('/api/v1/catalog')->assertJsonPath('location.serviceable', true)->json();
+        $this->assertSame(collect([$ro->id, $pv->id])->sort()->values()->all(), $this->serviceIds($cat), 'non-AC services, two categories');
+    }
+
+    #[Test]
+    public function the_postgres_connection_does_not_rely_on_server_side_prepared_statements(): void
+    {
+        // Neon's pooler (PgBouncer, transaction mode) broke named prepared statements: random 500s
+        // ("prepared statement pdo_stmt_… does not exist") and wrong services for a PIN code.
+        $options = config('database.connections.pgsql.options');
+        $this->assertTrue($options[\PDO::ATTR_EMULATE_PREPARES] ?? false);
+        if (config('database.default') === 'pgsql') {
+            $this->assertTrue((bool) \DB::connection()->getPdo()->getAttribute(\PDO::ATTR_EMULATE_PREPARES));
+        }
+    }
+
+    #[Test]
     public function every_customer_screen_loads_for_a_customer_registered_only_by_pincode(): void
     {
         $this->service();
